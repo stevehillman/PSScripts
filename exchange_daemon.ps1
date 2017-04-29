@@ -8,10 +8,10 @@
 $ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
 $ListenPort = 2016
 $Testing=1
-$LogFile = "C:\Users\Hillman\exchange_daemon.log"
+$LogFile = "C:\Users\Administrator\exchange_daemon.log"
 
 # The token we require from the client to verify auth. Simple string compare
-$Token = Get-Content "C:\Users\Hillman\exchange_daemon_token.txt" -totalcount 1
+$Token = Get-Content "C:\Users\Administrator\exchange_daemon_token.txt" -totalcount 1
 
 # Import dependencies
 Import-Module -Name PSAOBRestClient
@@ -81,6 +81,23 @@ try {
             elseif ($line -Match "^$Token getuser ([a-z\-]+)")
             {
                 $Resp = Get-Mailbox $Matches[1] | ConvertTo-Json
+            }
+
+            elseif ($line -Match "^$Token newuser (.+)")
+            {
+                $json = $Matches[1]
+                $userobj = ConvertFrom-Json $json
+                # For a new user, we need account name, firstname, lastname, displayname, password
+                $samacct = $userobj.username
+                $fn = $userobj.firstname
+                $sn = $userobj.lastname
+
+                # Sanitize the input
+                # Strip domain, if present
+                $samacct -replace "@.*",""
+
+                # Do we need to define upn?
+                $upn = $samacct + "@its.sfu.ca"
             }
 
 
