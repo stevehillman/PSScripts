@@ -83,9 +83,10 @@ try {
                 $Resp = Get-Mailbox $Matches[1] | ConvertTo-Json
             }
 
-            elseif ($line -Match "^$Token newuser (.+)")
+            elseif ($line -Match "^$Token new(user|room|equipment) (.+)")
             {
-                $json = $Matches[1]
+                $type = $Matches[1]
+                $json = $Matches[2]
                 $userobj = ConvertFrom-Json $json
                 # For a new user, we need account name, firstname, lastname, displayname, password
                 $samacct = $userobj.username
@@ -96,8 +97,27 @@ try {
                 # Strip domain, if present
                 $samacct -replace "@.*",""
 
-                # Do we need to define upn?
                 $upn = $samacct + "@its.sfu.ca"
+
+                $spass = ConvertTo-SecureString -String $userobj.password -AsPlainText -Force
+
+                if ($type -eq "user")
+                {
+                    new-mailbox -UserPrincipalName $upn -Password $spass -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                }
+                elseif ($type -eq "room")
+                {
+                    # For rooms and equipment, do we want to enable login to the room/equip account or not? Need to do research
+                    # new-mailbox -Room -EnableRoomMailboxAccount $true -UserPrincipalName $upn -RoomMailboxPassword $spass -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                    new-mailbox -Room -UserPrincipalName $upn -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+               
+                }
+                elseif ($type -eq "equipment")
+                {
+                    # For rooms and equipment, do we want to enable login to the room/equip account or not? Need to do research
+                    # new-mailbox -Equipment -EnableRoomMailboxAccount $true -UserPrincipalName $upn -Password $spass -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                    new-mailbox -Equipment -UserPrincipalName $upn -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                }
             }
 
 
