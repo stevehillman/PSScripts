@@ -8,10 +8,11 @@
 $ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
 $ListenPort = 2016
 $Testing=1
-$LogFile = "C:\Users\Administrator\exchange_daemon.log"
+$LogFile = "C:\Users\hillman\exchange_daemon.log"
+$OU = "SFUUsers"
 
 # The token we require from the client to verify auth. Simple string compare
-$Token = Get-Content "C:\Users\Administrator\exchange_daemon_token.txt" -totalcount 1
+$Token = Get-Content "C:\Users\hillman\exchange_daemon_token.txt" -totalcount 1
 
 # Import dependencies
 Import-Module -Name PSAOBRestClient
@@ -64,8 +65,7 @@ try {
         $Writer.write("ok`n")
 
         try {
-          do
-          {
+         
             $line = $Reader.ReadLine()
 
             Add-Content $Logfile "Processing command $line"
@@ -95,46 +95,58 @@ try {
 
                 # Sanitize the input
                 # Strip domain, if present
-                $samacct -replace "@.*",""
+                $samacct = $samacct -replace "@.*",""
 
                 $upn = $samacct + "@its.sfu.ca"
-
-                $spass = ConvertTo-SecureString -String $userobj.password -AsPlainText -Force
-
-                if ($type -eq "user")
+                
+                try
                 {
-                    new-mailbox -UserPrincipalName $upn -Password $spass -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
-                }
-                elseif ($type -eq "room")
-                {
-                    # For rooms and equipment, do we want to enable login to the room/equip account or not? Need to do research
-                    # new-mailbox -Room -EnableRoomMailboxAccount $true -UserPrincipalName $upn -RoomMailboxPassword $spass -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
-                    new-mailbox -Room -UserPrincipalName $upn -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                    $spass = ConvertTo-SecureString -String $userobj.password -AsPlainText -Force
+                    $Resp = "`"ok`""
+
+                    if ($type -eq "user")
+                    {
+                        new-mailbox -OrganizationalUnit $OU -UserPrincipalName $upn -Name $samacct -Password $spass -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                    }
+                    elseif ($type -eq "room")
+                    {
+                        # For rooms and equipment, do we want to enable login to the room/equip account or not? Need to do research
+                        # new-mailbox -Room -EnableRoomMailboxAccount $true -UserPrincipalName $upn -RoomMailboxPassword $spass -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                        new-mailbox -OrganizationalUnit $OU -Room -UserPrincipalName $upn -Name $samacct -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
                
+                    }
+                    elseif ($type -eq "equipment")
+                    {
+                        # For rooms and equipment, do we want to enable login to the room/equip account or not? Need to do research
+                        # new-mailbox -Equipment -EnableRoomMailboxAccount $true -UserPrincipalName $upn -Password $spass -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                        new-mailbox -OrganizationalUnit $OU -Equipment -UserPrincipalName $upn -Name $samacct -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                    }
                 }
-                elseif ($type -eq "equipment")
+                catch
                 {
-                    # For rooms and equipment, do we want to enable login to the room/equip account or not? Need to do research
-                    # new-mailbox -Equipment -EnableRoomMailboxAccount $true -UserPrincipalName $upn -Password $spass -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
-                    new-mailbox -Equipment -UserPrincipalName $upn -FirstName $fn -Lastname $sn -Displayname $userobj.displayname
+                    write-error $_.toString()
+                    $Writer.write("err: Error executing request: $($_.Exception.ToString()) `n")
+                    # Error processing below handles this
+                    # $Writer.write("err Could not create user: $($_.toString())")
                 }
             }
 
 
             elseif ($line -Match "^quit")
             {
-                break
+                # break
+                $Resp="bye"
             }
             else
             {
-                $Writer.write("Unrecognized command $line`n")
-                break
+                $Resp = "Unrecognized command $line"
+                # break
             }
 
 
             if ($error.Count)
             {
-                    $Writer.write("`"Err: Error executing request: $($error.Exception.ToString()) `"`n")
+                    $Writer.write("err: Error executing request: $($error.Exception.ToString()) `n")
                     $error.Clear()
             }
             else
@@ -143,7 +155,7 @@ try {
                 $Writer.write("`n")
             }
 
-          } while ($True)
+         
         }
         catch
         {
