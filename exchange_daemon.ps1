@@ -5,14 +5,23 @@
 # - create mailboxes
 # - change properties on mailboxes
 
+[cmdletbinding()]
+param([switch]$Testing)
+
 $ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
 $ListenPort = 2016
-$Testing=1
-$LogFile = "C:\Users\hillman\exchange_daemon.log"
+$LogFile = "C:\Users\exch taskman\exchange_daemon.log"
+$TokenFile = "C:\Users\exch taskman\exchange_daemon_token.txt"
 $OU = "SFUUsers"
 
+if ($Testing -eq $True)
+{
+    $LogFile = "C:\Users\hillman\exchange_daemon.log"
+    $TokenFile = "C:\Users\hillman\exchange_daemon_token.txt"
+}
+
 # The token we require from the client to verify auth. Simple string compare
-$Token = Get-Content "C:\Users\hillman\exchange_daemon_token.txt" -totalcount 1
+$Token = Get-Content $TokenFile -totalcount 1
 
 # Import dependencies
 Import-Module -Name PSAOBRestClient
@@ -32,8 +41,8 @@ try {
         import-pssession $ESession
 }
 catch {
-        write-error "Error connecting to Exchange Server: "
-        write-error $_.Exception
+        write-host "Error connecting to Exchange Server: "
+        write-host $_.Exception
         exit
 }
 
@@ -124,8 +133,8 @@ try {
                 }
                 catch
                 {
-                    write-error $_.toString()
-                    $Writer.write("err: Error executing request: $($_.Exception.ToString()) `n")
+                    write-Host $_.toString()
+                    $Writer.write("err: Error executing request: $(ConvertTo-Json $_) `n")
                     # Error processing below handles this
                     # $Writer.write("err Could not create user: $($_.toString())")
                 }
@@ -159,7 +168,7 @@ try {
         }
         catch
         {
-            write-error "Lost connection"
+            write-Host "Lost connection"
         }
 
         # Close socket and repeat
@@ -167,7 +176,7 @@ try {
     }
 }
 catch {
-    Write-Error $_
+    Write-Host $_
 }
 Finally {
     Write-Host "Cleaning up.."
