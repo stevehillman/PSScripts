@@ -81,10 +81,17 @@ try {
             # Process command
             if ($line -Match "^$Token getusers")
             {
-                $Resp =  get-mailbox | select-object -property PrimarySmtpAddress,`
+                try {
+                    $Resp =  get-mailbox | select-object -property PrimarySmtpAddress,`
                                                                RecipientTypeDetails,`
                                                                DisplayName,`
                                                                SamAccountName | ConvertTo-Json
+                }
+                catch
+                {
+                    write-Host $_.toString()
+                    $Writer.write("err: Error executing request: $($_.Exception.Message) `n")
+                }
                 
             }
             elseif ($line -Match "^$Token getuser ([a-z\-]+)")
@@ -134,9 +141,7 @@ try {
                 catch
                 {
                     write-Host $_.toString()
-                    $Writer.write("err: Error executing request: $(ConvertTo-Json $_) `n")
-                    # Error processing below handles this
-                    # $Writer.write("err Could not create user: $($_.toString())")
+                    # $Writer.write("err: Error executing request: $($_.Exception.Message) `n")
                 }
             }
 
@@ -155,7 +160,7 @@ try {
 
             if ($error.Count)
             {
-                    $Writer.write("err: Error executing request: $($error.Exception.ToString()) `n")
+                    $Writer.write("err: Error executing request: $($error.Exception.Message) `n")
                     $error.Clear()
             }
             else
