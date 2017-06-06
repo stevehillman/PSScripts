@@ -99,6 +99,11 @@ try {
                 $Resp = Get-Mailbox $Matches[1] | ConvertTo-Json
             }
 
+            elseif ($line -Match "^$Token getqueue")
+            {
+                $Resp = Get-ExchangeServer | Get-Queue | ConvertTo-Json
+            }
+
             elseif ($line -Match "^$Token new(user|room|equipment) (.+)")
             {
                 $type = $Matches[1]
