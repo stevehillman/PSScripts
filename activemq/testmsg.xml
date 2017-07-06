@@ -1,0 +1,61 @@
+<syncLogin>
+  <username>rosey</username>
+  <login>
+    <username>rosey</username>
+    <status>active</status>
+    <cipherPassword>blah</cipherPassword>
+    <sshaPassword>{SSHA}blah</sshaPassword>
+    <md5Password>{crypt}blah</md5Password>
+    <cryptPassword>blah</cryptPassword>
+    <gcos>Joe Rose</gcos>
+    <posixGid>1000</posixGid>
+    <posixUid>10000</posixUid>
+    <posixHome>/home/rosey</posixHome>
+    <posixShell>/bin/csh</posixShell>
+    <isSAD>true</isSAD>
+    <isLightweight>false</isLightweight>
+    <quota></quota>
+    <quotaChanged>false</quotaChanged>
+    <physHomeDir>/staff1/rosey</physHomeDir>
+    <sfuEduPersonTargetedIDBase>69541</sfuEduPersonTargetedIDBase>
+    <createDate>2015-12-02T10:39:56.000-08:00</createDate>
+    <aliases>
+      <string>icatdrop</string>
+      <string>joe_rose</string>
+    </aliases>
+    <sfuScopedAlias>
+      <string>icatdrop@sfu.ca</string>
+      <string>joe_rose@sfu.ca</string>
+    </sfuScopedAlias>
+    <adGroups>
+      <string>i-cat</string>
+      <string>lan-administrators</string>
+    </adGroups>
+    <person>200000</person>
+  </login>
+  <person>
+    <surname>Rose</surname>
+    <givenName>Joe</givenName>
+    <firstnames>Joe</firstnames>
+    <preferredName>Joe</preferredName>
+    <anonymous>false</anonymous>
+    <externalEmail></externalEmail>
+    <externalID>300000000</externalID>
+    <sfuid>300000000</sfuid>
+    <libraryBarcode>2900000000000</libraryBarcode>
+    <galDeptName>IT Services</galDeptName>
+    <roles>
+      <string>staff</string>
+      <string>f_grad</string>
+      <string>alumnus</string>
+    </roles>
+    <sfuSponsoredType></sfuSponsoredType>
+    <title>Senior Developer</title>
+    <sfuVisibility>1</sfuVisibility>
+    <phones>
+      <phone>1 778 782-2000</phone>
+    </phones>
+    <url></url>
+    <email>joe_rose@sfu.ca</email>
+  </person>
+</syncLogin>
