@@ -10,103 +10,80 @@ param(
 
 Import-Module -Name PSActiveMQClient
 
-$ActiveMQServer = "failover:(tcp://msgbroker1.tier2.sfu.ca:61616,tcp://msgbroker2.tier2.sfu.ca:61616)?randomize=false"
-# ActiveMQServer = "activemq:tcp://localhost:61616"
+function graceful-exit($s)
+{
+    try {
+        Remove-ActiveMQSession $s
+    }
+    catch {
+    }
+    exit 0
+}
+
+function process-message($xmlmsg)
+{
+    $username = $xmlmsg.synclogin.username
+    $groups = $xmlmsg.synclogin.login.adGroups.childNodes.InnerText
+    $aliases = $xmlmsg.synclogin.login.aliases.childNodes.InnerText
+    $roles = $xmlmsg.synclogin.person.roles.childNodes.InnerText
+
+    # For testing
+    write-host "User     : $username"
+    Write-host "AD Groups: $($groups -join ',')"
+    Write-Host "Aliases  : $($aliases -join ',')"
+    Write-Host "Roles    : $($roles -join ',')"
+    write-host ""
+
+}
+
+
+
+
+#$ActiveMQServer = "failover:(tcp://msgbroker1.tier2.sfu.ca:61616,tcp://msgbroker2.tier2.sfu.ca:61616)?randomize=false"
+$ActiveMQServer = "activemq:tcp://localhost:61616"
 $queueName = "ICAT.amaint.toExchange"
+$me = $env:username
+$LogFile = "C:\Users\$me\activemq_client.log"
 
 
-$AMQSession = New-ActiveMQSession -Uri $ActiveMQServer -User $Username -Password $Password
+$AMQSession = New-ActiveMQSession -Uri $ActiveMQServer -User $Username -Password $Password -ClientAcknowledge
 
 $Target = [Apache.NMS.Util.SessionUtil]::GetDestination($AMQSession, "queue://$queueName")
 
 # Create a consumer with the target
-$Consumer =  $Session.CreateConsumer($Target)
+$Consumer =  $AMQSession.CreateConsumer($Target)
 
-function global:connect($url)
+# Wait for a message. For now, we'll wait a really short time and 
+# if no message arrives, sleep before trying again. That way we can add more logic
+# inside our loop later if we want to (e.g. checking multiple queues for messages)
+
+while(1)
 {
-    write-host "Start connecting to activeMq at : $((Get-Date).ToString())" 
-    $uri = [System.Uri]$url
-    write-host $uri
-    $factory =  New-Object Apache.NMS.NMSConnectionFactory($uri)
-
-    $connection = $factory.CreateConnection("username", "password")
-    Write-Host $connection
-    
-    $session = $connection.CreateSession()
-    $target = [Apache.NMS.Util.SessionUtil]::GetDestination($session, "queue://$queueName")
-    Write-Host "created session  $target  . $target.IsQueue " 
-
-    # creating message queue consumer. 
-    # using the Listener - event listener might not be suitable 
-    # as we only logs expired messages in the queue. 
-
-    $consumer =  $session.CreateConsumer($target)
-    $targetQueue = $session.GetQueue($queueName)
-    $queueBrowser = $session.CreateBrowser($targetQueue)
-    $messages = $queueBrowser.GetEnumerator()
-    
-     Write-Host "------------Connection starts------------"
-
-     $connection.Start()
-
-     Write-Host $connection
-
-     try {
-        while(1) {
-            Write-Host "Waiting for messages.."
-            $msg = $consumer.Receive([System.TimeSpan]::FromSeconds(60))
-            if (!$msg)
-            {
-                Write-Host "No msg after 1 minute. Repeating"
-                continue
-            }
-    
-          
-            Write-Host "Reading message:"
-            Write-Host $msg.Text
-            if ($msg.Text -Match "^quit")
-            {
-                break
-            }
+    try {
+        $Message = $Consumer.Receive([System.TimeSpan]::FromTicks(10000))
+        if (!$Message)
+        {
+            Start-Sleep -Seconds 1
+            continue
         }
-     }
-     catch
-     {
-        Write-Error $_
-     }   
-
-     Write-Host "Closing connection"
-     $connection.Close()
-     # restartTimer
+        [xml]$msg = $Message.Text
+        # We only care about SyncLogin messages
+        if (!$msg.syncLogin)
+        {
+            # Acknowledge but skip
+            $msg.Acknowledge()
+            Add-Content $Logfile "$(date) : Ignoring msg: $msg"
+            continue
+        }
+        process-message($msg)
+        $Message.Acknowledge()
+    }
+    catch {
+        $_
+        # Realistically, we want to log errors but try to recover
+        # For now we'll just exit and let Windows Scheduler restart us
+        graceful-exit($AMQSession)
+    }
 }
 
-function global:restartTimer()
-{
-    Write-Host "Restarting timer."
-    $timer.Start();
-}
 
-function main()
-{   
-    setupTimer 
-}
-
-function setupTimer()
-{
-    Write-Host "register timer event"
-    Register-ObjectEvent $timer -EventName Elapsed -Action $action
-    Write-Host "starting timer"
-    $timer.Start()    
-}
-
-function global:getLocalDateTime($time)
-{
-    $timeStr = $time.toString()
-    $unixTime = $timeStr.subString(0, $timeStr.Length - 3)
-    $epoch = New-Object -Type DateTime -ArgumentList 1970, 1, 1, 0, 0, 0, 0
-    return $epoch.AddSeconds($unixTime).ToLocalTime()
-}
-
-# main code block
-
-global:connect($msmqHost)

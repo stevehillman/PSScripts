@@ -10,15 +10,10 @@ param([switch]$Testing)
 
 $ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
 $ListenPort = 2016
-$LogFile = "C:\Users\exch taskman\exchange_daemon.log"
-$TokenFile = "C:\Users\exch taskman\exchange_daemon_token.txt"
+$me = $env:username
+$LogFile = "C:\Users\$me\exchange_daemon.log"
+$TokenFile = "C:\Users\$me\exchange_daemon_token.txt"
 $OU = "SFUUsers"
-
-if ($Testing -eq $True)
-{
-    $LogFile = "C:\Users\hillman\exchange_daemon.log"
-    $TokenFile = "C:\Users\hillman\exchange_daemon_token.txt"
-}
 
 # The token we require from the client to verify auth. Simple string compare
 $Token = Get-Content $TokenFile -totalcount 1
