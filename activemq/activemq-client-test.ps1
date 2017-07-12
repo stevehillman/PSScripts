@@ -11,6 +11,7 @@ param(
 Import-Module -Name PSActiveMQClient
 
 # Local settings. Customize as needed
+$ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
 #$ActiveMQServer = "failover:(tcp://msgbroker1.tier2.sfu.ca:61616,tcp://msgbroker2.tier2.sfu.ca:61616)?randomize=false"
 $ActiveMQServer = "activemq:tcp://localhost:61616"
 $queueName = "ICAT.amaint.toExchange"
@@ -20,6 +21,28 @@ $LogFile = "C:\Users\$me\activemq_client.log"
 # Maximum number of times to retry processing a message. After this message will be logged and discarded
 $MaxRetries = 30 
 
+
+# Set up our Exchange shell
+$e_uri = $ExchangeServer + "/PowerShell/"
+try {
+        if ($me -eq "hillman")
+        {
+            # For testing..
+            $Cred = Get-Credential
+            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos -Credential $Cred
+        }
+        else
+        {
+            # Prod
+            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos
+        }
+        import-pssession $ESession
+}
+catch {
+        write-host "Error connecting to Exchange Server: "
+        write-host $_.Exception
+        exit
+}
 
 ## Local private functions ##
 
@@ -58,7 +81,63 @@ function process-amaint-message($xmlmsg)
         Add-Content $Logfile "$(date) : $username not found in AD. Failing: $_"
         return 0
     }
+
+    $create = $false
+    $update = $false
+    # See if the user already has an Exchange Mailbox
+    try {
+        $mb = Get-Mailbox $username
+    }
+    catch {
+        # It's possible that other errors could trigger a failure here but we'll deal with that below
+        $create = $true
+        $update = $true
+    }
+
+# We need to see if user is on exchange-users maillist and if not, make no changes
+# Once all users are on, we can remove this check.
+blah
+
     
+    if ($create)
+    {
+        try {
+            Enable-Mailbox -Identity $username -name $username
+            $mb = Get-Mailbox $username
+        }
+        catch {
+            # Now we have a problem. Throw an error and abort for this user
+             Add-Content $Logfile "$(date) : Unable to enable Exchange Mailbox for ${username}: $_"
+             return 0
+        }
+    }
+
+    # Get the list of aliases from Exchange
+    # Strip Exchange prefix and domain suffix
+    $al_tmp = @($mb.EmailAddresses)
+    # Create empty array of appropriate size to hold scoped aliases
+    $aliases = @($null) * $al_tmp.count
+
+    $x = 0
+    foreach ($alias in $al_tmp)
+    {
+        $aliases[$x] = $alias  -replace ".*:" -replace "@.*"
+        $x++
+    }   
+
+    # Check if the account needs updating
+    if (! $update)
+    {
+        # Check aliases
+        # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
+        if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($msg.syncLogin.login.aliases.ChildNodes.InnerText))
+        {
+            $update = $true
+        }
+        
+    }
+
+
     $groups = $xmlmsg.synclogin.login.adGroups.childNodes.InnerText
     $aliases = $xmlmsg.synclogin.login.aliases.childNodes.InnerText
     $roles = $xmlmsg.synclogin.person.roles.childNodes.InnerText
@@ -73,7 +152,9 @@ function process-amaint-message($xmlmsg)
 }
 
 
-# Queue a message in the retry queue to retry it later
+# Queue a message in the retry queue to retry it later.
+# We reformat the XML - wrap it in a "retryMessage" tag and
+# add a retry count tag.
 function retry-message($m)
 {
     [xml]$mtmp = $m.Text
@@ -135,6 +216,7 @@ while(1)
         $Message = $Consumer.Receive([System.TimeSpan]::FromTicks(10000))
         if (!$Message)
         {
+            # No message from the main queue. See if we should check the retry queue
             $loopcounter++
             if ($loopcounter > 10)
             {
@@ -147,6 +229,8 @@ while(1)
                 Start-Sleep -Seconds 1
                 continue
             }
+
+            # Got a message from the Retry queue. Extract the inner message
             [xml]$msgtmp = $Message.Text
             $msg = $msgtmp.retryMessage
             Add-Content $Logfile "$(date) : Retrying msg $msgtmp"
