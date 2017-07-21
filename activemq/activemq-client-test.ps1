@@ -108,7 +108,7 @@ function process-amaint-message($xmlmsg)
         $update = $true
     }
     
-    # No mailbox exists. Enable the user in Exchange
+    # No mailbox exists. Enable the mailbox in Exchange
     if ($create)
     {
         try {
@@ -122,28 +122,32 @@ function process-amaint-message($xmlmsg)
         }
     }
 
-    # Get the list of aliases from Exchange
-    # Strip Exchange prefix and domain suffix
-    $al_tmp = @($mb.EmailAddresses)
-    # Create empty array of appropriate size to hold scoped aliases
-    $aliases = @($null) * $al_tmp.count
-
-    $x = 0
-    foreach ($alias in $al_tmp)
-    {
-        $aliases[$x] = $alias  -replace ".*:" -replace "@.*"
-        $x++
-    }   
+    
 
     # Check if the account needs updating
     if (! $update)
     {
         # Check aliases
+        # Get the list of aliases from Exchange
+        # Strip Exchange prefix and domain suffix
+        $al_tmp = @($mb.EmailAddresses)
+        # Create empty array of appropriate size to hold scoped aliases
+        $aliases = @($null) * $al_tmp.count
+
+        $x = 0
+        foreach ($alias in $al_tmp)
+        {
+            $aliases[$x] = $alias  -replace ".*:" -replace "@.*"
+            $x++
+        }   
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
         if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($msg.syncLogin.login.aliases.ChildNodes.InnerText))
         {
             $update = $true
         }
+
+
+        # Check if roles align with Exchange settings
         
     }
 
