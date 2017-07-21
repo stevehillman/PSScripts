@@ -9,6 +9,7 @@ param(
     )
 
 Import-Module -Name PSActiveMQClient
+Import-Modile -Name PSAOBRestClient
 
 # Local settings. Customize as needed
 $ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
@@ -18,9 +19,15 @@ $queueName = "ICAT.amaint.toExchange"
 $retryQueueName = "ICAT.amaint.toExchange.retry"
 $me = $env:username
 $LogFile = "C:\Users\$me\activemq_client.log"
+$TokenFile = "C:\Users\$me\REST_Authtoken.txt"
+
 # Maximum number of times to retry processing a message. After this message will be logged and discarded
 $MaxRetries = 30 
+# Listname for users who are on Exchange. Ignore ActiveMQ msgs for anyone not on this list
+$ExchangeUsersList = "exchange-users"
 
+
+$RestToken = Get-Content $TokenFile -totalcount 1
 
 # Set up our Exchange shell
 $e_uri = $ExchangeServer + "/PowerShell/"
@@ -72,6 +79,13 @@ function process-amaint-message($xmlmsg)
         return 1
     }
 
+    # Skip users not on Exchange yet. Remove this check when all users are on.
+    if (! Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken)
+    {
+        Add-Content $Logfile "$(date) : Skipping update for $username. Not a member of $ExchangeUsersList"
+        return 1
+    }
+
     # Verify the user in AD
     try {
         $aduser = Get-ADUser $username
@@ -93,12 +107,8 @@ function process-amaint-message($xmlmsg)
         $create = $true
         $update = $true
     }
-
-# We need to see if user is on exchange-users maillist and if not, make no changes
-# Once all users are on, we can remove this check.
-blah
-
     
+    # No mailbox exists. Enable the user in Exchange
     if ($create)
     {
         try {
