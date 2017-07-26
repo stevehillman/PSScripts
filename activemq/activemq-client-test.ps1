@@ -75,12 +75,22 @@ function process-amaint-message($xmlmsg)
     # Skip lightweight and non-active accts
     if ($xmlmsg.syncLogin.login.isLightweight -eq "true" -or $xmlmsg.syncLogin.login.status -ne "active")
     {
+        # TODO: Add check here to disable accounts that go lightweight or disabled
+        # Note that if we use Disable-Mailbox to disconnect an AD user from their mailbox,
+        # we have to use connect-mailbox rather than enable-mailbox to reconnect them
+        # It may be better to create a retention policy that deletes all mail after x days and
+        # change the mailbox's retention policy to that, plus prevent logins by:
+        #  - disabling all protocols for account
+        #  - change email aliases to, e.g "_disabled"
+        # for reference: Set-CASMailbox USER -ActiveSyncEnabled $false -ImapEnabled $false -EwsEnabled $false -MAPIEnabled $false -OWAEnabled $false -PopEnabled $false -OWAforDevicesEnabled $false
+        # What if we just set AccountDisabled to $true with set-mailbox?
+        # maybe disable-mailbox after account is inactive for 1(?) year?
         Add-Content $Logfile "$(date) : Skipping update for $username. Lightweight or inactive"
         return 1
     }
 
     # Skip users not on Exchange yet. Remove this check when all users are on.
-    if (! Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken)
+    if (-Not Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken)
     {
         Add-Content $Logfile "$(date) : Skipping update for $username. Not a member of $ExchangeUsersList"
         return 1
@@ -111,6 +121,8 @@ function process-amaint-message($xmlmsg)
     # No mailbox exists. Enable the mailbox in Exchange
     if ($create)
     {
+        # TODO: We need to determine whether the user previously had an Exchange mailbox and
+        # if so, use Connect-Mailbox to reconnect them, as Enable-Mailbox will always create a new mailbox.
         try {
             Enable-Mailbox -Identity $username -name $username
             $mb = Get-Mailbox $username
@@ -122,7 +134,14 @@ function process-amaint-message($xmlmsg)
         }
     }
 
-    
+    # Default to hidden in GAL
+    $hideInGal=$true
+
+    $roles = @($xmlmsg.synclogin.person.roles.InnerText)
+    if ($roles -contains "staff" -or $roles -contains "faculty" -or [int]$xmlmsg.synclogin.person.sfuVisibility -gt 4)
+    {
+        $hideInGal=$false
+    }
 
     # Check if the account needs updating
     if (! $update)
@@ -141,28 +160,32 @@ function process-amaint-message($xmlmsg)
             $x++
         }   
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
-        if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($msg.syncLogin.login.aliases.ChildNodes.InnerText))
+        if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($xmlmsg.syncLogin.login.aliases.ChildNodes.InnerText))
         {
             $update = $true
         }
 
-
-        # Check if roles align with Exchange settings
-        
+        if ($mb.HiddenFromAddressListsEnabled -ne $hideInGal)
+        {
+            $update = $true
+        }
     }
 
+    if ($update)
+    {
+        # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
+        $addresses = @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText) -Join ","
+        try {
+            Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal -EmailAddresses $addresses
+            Add-Content $Logfile "$(date) : Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
+        }
+        catch {
+            Add-Content $Logfile "$(date) : Unable to update Exchange Mailbox for ${username}: $_"
+            return 0
+        }
+    }
 
-    $groups = $xmlmsg.synclogin.login.adGroups.childNodes.InnerText
-    $aliases = $xmlmsg.synclogin.login.aliases.childNodes.InnerText
-    $roles = $xmlmsg.synclogin.person.roles.childNodes.InnerText
-
-    # For testing
-    write-host "User     : $username"
-    Write-host "AD Groups: $($groups -join ',')"
-    Write-Host "Aliases  : $($aliases -join ',')"
-    Write-Host "Roles    : $($roles -join ',')"
-    write-host ""
-
+    return 1
 }
 
 
