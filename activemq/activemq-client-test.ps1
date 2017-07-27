@@ -289,7 +289,7 @@ while(1)
         # We currently only care about SyncLogin messages
         if ($msg.syncLogin)
         {
-            Add-Content $Logfile "$(date) : Processing Amaint msg $msg"
+            Add-Content $Logfile "$(date) : Processing Amaint msg `r`n $($msg.Text)"
             if (process-amaint-message($msg))
             {
                 Add-Content $Logfile "$(date) : Success"
