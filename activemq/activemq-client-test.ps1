@@ -9,7 +9,7 @@ param(
     )
 
 Import-Module -Name PSActiveMQClient
-Import-Modile -Name PSAOBRestClient
+Import-Module -Name PSAOBRestClient
 
 # Local settings. Customize as needed
 $ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
