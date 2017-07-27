@@ -264,7 +264,7 @@ while(1)
         {
             # No message from the main queue. See if we should check the retry queue
             $loopcounter++
-            if ($loopcounter > 10)
+            if ($loopcounter -gt 10)
             {
                 # Only try the retry queue every 10 seconds
                 $Message = $RetryConsumer.Receive([System.TimeSpan]::FromTicks(10000))
@@ -279,7 +279,7 @@ while(1)
             # Got a message from the Retry queue. Extract the inner message
             [xml]$msgtmp = $Message.Text
             $msg = $msgtmp.retryMessage
-            Add-Content $Logfile "$(date) : Retrying msg $msgtmp"
+            Add-Content $Logfile "$(date) : Retrying msg `r`n$($msgtmp.InnerXml)"
         }
         else
         {
