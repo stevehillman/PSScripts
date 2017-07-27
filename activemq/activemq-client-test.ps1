@@ -229,7 +229,7 @@ function retry-message($m)
     Send-ActiveMQMessage -Queue "queue://$retryQueueName" -Session $AMQSession -Message $mtmp
 
     # Ack the original message
-    $m.Acknowledge()
+    $rc = $m.Acknowledge()
 
     return 1
 
@@ -289,11 +289,11 @@ while(1)
         # We currently only care about SyncLogin messages
         if ($msg.syncLogin)
         {
-            Add-Content $Logfile "$(date) : Processing Amaint msg `r`n $($msg.Text)"
+            Add-Content $Logfile "$(date) : Processing Amaint msg `r`n $($msg.InnerXml)"
             if (process-amaint-message($msg))
             {
                 Add-Content $Logfile "$(date) : Success"
-                $Message.Acknowledge()
+                $rc = $Message.Acknowledge()
             }
             else
             {
@@ -305,7 +305,7 @@ while(1)
         else
         {
             Add-Content $Logfile "$(date) : Ignoring msg: $msg"
-            $Message.Acknowledge()
+            $rc = $Message.Acknowledge()
         }
     }
     catch {
