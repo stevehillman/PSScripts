@@ -58,6 +58,7 @@ function graceful-exit($s)
 {
     try {
         Remove-ActiveMQSession $s
+        Remove-PSSession $ESession
     }
     catch {
     }
@@ -90,8 +91,14 @@ function process-amaint-message($xmlmsg)
     }
 
     # Skip users not on Exchange yet. Remove this check when all users are on.
-    $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken
-    
+    try {
+        $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken
+    }
+    catch {
+        Add-Content $Logfile "$(date) : Error communicating with REST Server for $username. Aborting processing of msg. $_"
+        return 0
+    }
+
     if (-Not $rc)
     {
         Add-Content $Logfile "$(date) : Skipping update for $username. Not a member of $ExchangeUsersList"
