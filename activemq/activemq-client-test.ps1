@@ -90,7 +90,7 @@ function process-amaint-message($xmlmsg)
     }
 
     # Skip users not on Exchange yet. Remove this check when all users are on.
-    $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken)
+    $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken
     
     if (-Not $rc)
     {
