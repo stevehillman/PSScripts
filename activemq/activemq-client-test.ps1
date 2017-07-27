@@ -220,7 +220,7 @@ function retry-message($m)
         $mtmp.retryMessage.count = "$count"
     }
 
-    if ($mtmp.retryMessage.count -gt $MaxRetries)
+    if ([int]$mtmp.retryMessage.count -gt $MaxRetries)
     {
         Add-Content $Logfile "$(date) : FAIL. Max retries exceeded for $($mtmp.InnerXml)"
         return 0
