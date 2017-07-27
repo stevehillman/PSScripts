@@ -90,7 +90,9 @@ function process-amaint-message($xmlmsg)
     }
 
     # Skip users not on Exchange yet. Remove this check when all users are on.
-    if (-Not Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken)
+    $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken)
+    
+    if (-Not $rc)
     {
         Add-Content $Logfile "$(date) : Skipping update for $username. Not a member of $ExchangeUsersList"
         return 1
