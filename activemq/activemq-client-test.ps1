@@ -226,7 +226,7 @@ function retry-message($m)
         return 0
     }
 
-    Send-ActiveMQMessage -Queue "queue://$retryQueueName" -Session $AMQSession -Message $mtmp
+    Send-ActiveMQMessage -Queue $retryQueueName -Session $AMQSession -Message $mtmp
 
     # Ack the original message
     $rc = $m.Acknowledge()
