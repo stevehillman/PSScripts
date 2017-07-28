@@ -228,9 +228,6 @@ function retry-message($m)
 
     Send-ActiveMQMessage -Queue $retryQueueName -Session $AMQSession -Message $mtmp
 
-    # Ack the original message
-    $rc = $m.Acknowledge()
-
     return 1
 
 }
@@ -268,7 +265,12 @@ while(1)
             {
                 # Only try the retry queue every 10 seconds
                 $Message = $RetryConsumer.Receive([System.TimeSpan]::FromTicks(10000))
-                $loopcounter = 1
+                if (!$Message)
+                {
+                    # Only reset the counter if no message was found, so that if there are 
+                    # multiple messages to be tried, they'll all be tried at once
+                    $loopcounter = 1
+                }
             }
             if (!$Message)
             {
@@ -299,6 +301,8 @@ while(1)
             {
                 Add-Content $Logfile "$(date) : Failure. Will Retry"
                 $rc = retry-message($Message)
+                # Even if retry-message exceeds max retries, we still have to Acknowledge msg to clear it from the queue
+                $Message.Acknowledge()
                 # TODO: If RC = 0, retry-message failed - report as an error (email?)
             }
         }
