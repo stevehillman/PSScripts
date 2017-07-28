@@ -2,61 +2,33 @@
 # A powershell script to read from any ActiveMq provider
 # 
 
-[cmdletbinding()]
-param(
-    [parameter(Mandatory=$true)][string]$Username,
-    [parameter(Mandatory=$true)][string]$Password
-    )
-
 Import-Module -Name PSActiveMQClient
 Import-Module -Name PSAOBRestClient
 
-# Local settings. Customize as needed
-$ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
-#$ActiveMQServer = "failover:(tcp://msgbroker1.tier2.sfu.ca:61616,tcp://msgbroker2.tier2.sfu.ca:61616)?randomize=false"
-$ActiveMQServer = "activemq:tcp://localhost:61616"
-$queueName = "ICAT.amaint.toExchange"
-$retryQueueName = "ICAT.amaint.toExchange.retry"
 $me = $env:username
 $LogFile = "C:\Users\$me\activemq_client.log"
-$TokenFile = "C:\Users\$me\REST_Authtoken.txt"
-$ErrorsFromEmail = "amaint@sfu.ca"
-$ErrorsToEmail = @("hillman@sfu.ca")
-$SmtpServer = "mailhost.sfu.ca"
+$SettingsFile = "C:\Users\$me\settings.json"
 
-# Maximum number of times to retry processing a message. After this message will be logged and discarded
-$MaxRetries = 30
-# Maximum amount of time to back off between retry msgs
-$MaxRetryTimer = 300 
-# Listname for users who are on Exchange. Ignore ActiveMQ msgs for anyone not on this list
-$ExchangeUsersList = "exchange-users"
-
-
-$RestToken = Get-Content $TokenFile -totalcount 1
-
-# Set up our Exchange shell
-$e_uri = $ExchangeServer + "/PowerShell/"
-try {
-        if ($me -eq "hillman")
-        {
-            # For testing..
-            $Cred = Get-Credential
-            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos -Credential $Cred
-        }
-        else
-        {
-            # Prod
-            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos
-        }
-        import-pssession $ESession
-}
-catch {
-        write-host "Error connecting to Exchange Server: "
-        write-host $_.Exception
-        exit
-}
 
 ## Local private functions ##
+
+function load-settings($s_file)
+{
+    $settings = ConvertFrom-Json ((Get-Content $s_file) -join "")
+    $global:ExchangeServer = $settings.Get_Item("ExchangeServer")
+    $global:ActiveMQServer = $settings.Get_Item("ActiveMQServer")
+    $global:Username = $settings.Get_Item("amqUsername")
+    $global:Password = $settings.Get_Item("amqPassword")
+    $global:queueName = $settings.Get_Item("QueueName")
+    $global:retryQueueName = $settings.Get_Item("RetryQueueName")
+    $global:RestToken = $settings.Get_Item("RestToken")
+    $global:MaxRetries = $settings.Get_Item("MaxRetries")
+    $global:MaxRetryTimer = $settings.Get_Item("MaxRetryTimer")
+    $global:ExchangeUsersList = $settings.Get_Item("ExchangeUsersList")
+    $global:ErrorsFromEmail = $settings.Get_Item("ErrorsFromEmail")
+    $global:ErrorsToEmail = $settings.Get_Item("ErrorsToEmail") 
+
+}
 
 function Write-Log($logmsg)
 {
@@ -257,6 +229,30 @@ function retry-message($m)
 
 
 ## main code block
+
+load-settings($SettinsFile)
+
+# Set up our Exchange shell
+$e_uri = $ExchangeServer + "/PowerShell/"
+try {
+        if ($me -eq "hillman")
+        {
+            # For testing..
+            $Cred = Get-Credential
+            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos -Credential $Cred
+        }
+        else
+        {
+            # Prod
+            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos
+        }
+        import-pssession $ESession
+}
+catch {
+        write-host "Error connecting to Exchange Server: "
+        write-host $_.Exception
+        exit
+}
 
 $AMQSession = New-ActiveMQSession -Uri $ActiveMQServer -User $Username -Password $Password -ClientAcknowledge
 
