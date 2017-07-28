@@ -300,7 +300,7 @@ while(1)
             # Got a message from the Retry queue. Extract the inner message
             $isRetry=$true
             [xml]$msgtmp = $Message.Text
-            $msg = $msgtmp.retryMessage
+            [xml]$msg = $msgtmp.retryMessage.InnerXml
             Write-Log "Retrying msg `r`n$($msgtmp.InnerXml)"
         }
         else
@@ -337,10 +337,9 @@ while(1)
                 $Message.Acknowledge()
                 if ($rc -eq 0)
                 {
-                    Send-MailMesage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Failure from Exchange ActiveMQ handler" `
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Failure from Exchange ActiveMQ handler" `
                         -SmtpServer $SmtpServer -Body "Failed to process message $MaxRetries time.`r`nMessage: $($Message.Text). `r`nLast Error: $LastError"
                 }
-                # TODO: If RC = 0, retry-message failed - report as an error (email?)
             }
         }
         # Add 'if' blocks here for other message types
