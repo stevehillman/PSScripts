@@ -106,8 +106,8 @@ function process-amaint-message($xmlmsg)
         $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken
     }
     catch {
-        Write-Log "Error communicating with REST Server for $username. Aborting processing of msg. $_"
-        $LastError = $_
+        $LastError =  "Error communicating with REST Server for $username. Aborting processing of msg. $_"
+        Write-Log $LastError
         return 0
     }
 
@@ -123,8 +123,8 @@ function process-amaint-message($xmlmsg)
     }
     catch {
         # Either they don't exist or there's an AD error. Either way we can't continue
-        Write-Log "$username not found in AD. Failing: $_"
-        $LastError = $_
+        $LastError = "$username not found in AD. Failing: $_"
+        Write-Log $LastError
         return 0
     }
 
@@ -151,8 +151,8 @@ function process-amaint-message($xmlmsg)
         }
         catch {
             # Now we have a problem. Throw an error and abort for this user
-             Write-Log "Unable to enable Exchange Mailbox for ${username}: $_"
-             $LastError = $_
+             $LastError = "Unable to enable Exchange Mailbox for ${username}: $_"
+             Write-Log $LastError
              return 0
         }
     }
@@ -203,7 +203,8 @@ function process-amaint-message($xmlmsg)
             Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
         }
         catch {
-            Write-Log "Unable to update Exchange Mailbox for ${username}: $_"
+            $LastError =  "Unable to update Exchange Mailbox for ${username}: $_"
+            Write-Log $LastError
             return 0
         }
     }
@@ -280,6 +281,7 @@ while(1)
             # Only try the retry queue every x seconds, where x is 10x number of failures in a row
             if ($loopcounter -gt $retryTimer)
             {
+                Write-Log "Loopcounter: $loopcounter. RetryTimer: $retryTimer"
                 # Only try the retry queue every x seconds
                 $Message = $RetryConsumer.Receive([System.TimeSpan]::FromTicks(10000))
                 # Only reset the counter if no message was found, so that if there are 
