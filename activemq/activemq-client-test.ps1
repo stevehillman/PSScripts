@@ -298,7 +298,8 @@ while(1)
             else
             {
                 Add-Content $Logfile "$(date) : Failure. Will Retry"
-                retry-message($Message)
+                $rc = retry-message($Message)
+                # TODO: If RC = 0, retry-message failed - report as an error (email?)
             }
         }
         # Add 'if' blocks here for other message types
