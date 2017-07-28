@@ -63,23 +63,25 @@ function Write-Log($logmsg)
     Add-Content $LogFile "$(date) : $logmsg"
 }
 
-# In case of error, shut down ActiveMQ session and exit
-function graceful-exit($s)
+function process-message($xmlmsg)
 {
-    try {
-        Remove-ActiveMQSession $s
-        Remove-PSSession $ESession
+    if ($msg.synclogin)
+    {
+        return process-amaint-message($xmlmsg)
     }
-    catch {
+    # Add other message types here in the future
+    else
+    {
+        Write-Log "Ignoring msg: Unsupported type"
+        return 1
     }
-    exit 0
 }
 
 # Process an ActiveMQ message from Amaint
 # First see if user needs an Exchange mailbox. Lightweight & disabled accts don't
 # Next, check if the user exists in AD. If not, skip this message - we have to wait for AD handler to create user
 # If user exists, enable Exchange mailbox if necessary and then verify account settings
-$LastError=""
+$global:LastError=""
 function process-amaint-message($xmlmsg)
 {
     $username = $xmlmsg.synclogin.username
@@ -106,7 +108,7 @@ function process-amaint-message($xmlmsg)
         $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken
     }
     catch {
-        $LastError =  "Error communicating with REST Server for $username. Aborting processing of msg. $_"
+        $global:LastError =  "Error communicating with REST Server for $username. Aborting processing of msg. $_"
         Write-Log $LastError
         return 0
     }
@@ -117,13 +119,15 @@ function process-amaint-message($xmlmsg)
         return 1
     }
 
+    Write-Log "Processing update for $username"
+
     # Verify the user in AD
     try {
         $aduser = Get-ADUser $username
     }
     catch {
         # Either they don't exist or there's an AD error. Either way we can't continue
-        $LastError = "$username not found in AD. Failing: $_"
+        $global:LastError = "$username not found in AD. Failing: $_"
         Write-Log $LastError
         return 0
     }
@@ -140,18 +144,19 @@ function process-amaint-message($xmlmsg)
         $update = $true
     }
     
-    # No mailbox exists. Enable the mailbox in Exchange
+    # No mailbox exists, Enable the mailbox in Exchange
     if ($create)
     {
         # TODO: We need to determine whether the user previously had an Exchange mailbox and
         # if so, use Connect-Mailbox to reconnect them, as Enable-Mailbox will always create a new mailbox.
+        Write-Log "Creating mailbox for $username"
         try {
             Enable-Mailbox -Identity $username -name $username
             $mb = Get-Mailbox $username
         }
         catch {
             # Now we have a problem. Throw an error and abort for this user
-             $LastError = "Unable to enable Exchange Mailbox for ${username}: $_"
+             $global:LastError = "Unable to enable Exchange Mailbox for ${username}: $_"
              Write-Log $LastError
              return 0
         }
@@ -203,7 +208,7 @@ function process-amaint-message($xmlmsg)
             Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
         }
         catch {
-            $LastError =  "Unable to update Exchange Mailbox for ${username}: $_"
+            $global:LastError =  "Unable to update Exchange Mailbox for ${username}: $_"
             Write-Log $LastError
             return 0
         }
@@ -268,6 +273,7 @@ $RetryConsumer = $AMQSession.CreateConsumer($RetryTarget)
 
 $loopcounter=1
 $retryFailures=0
+$msg=""
 
 while(1)
 {
@@ -321,53 +327,48 @@ while(1)
             [xml]$msg = $Message.Text
         }
 
-        # We currently only care about SyncLogin messages
-        if ($msg.syncLogin)
+
+        if (-Not $isRetry) { Write-Log "Processing msg `r`n $($msg.InnerXml)" }
+        if (process-message($msg))
         {
-            if (-Not $isRetry) { Write-Log "Processing Amaint msg `r`n $($msg.InnerXml)" }
-            if (process-amaint-message($msg))
-            {
-                Write-Log "Success"
-                $rc = $Message.Acknowledge()
-                if ($isRetry) 
-                { 
-                    $retryFailures = 0 
-                    $retryTimer=10
-                }
-            }
-            else
-            {
-                if ($isRetry) 
-                { 
-                    $retryFailures++ 
-                    $retryTimer = (1+$retryFailures) * 10
-                    if ($retryTimer -gt $MaxRetryTimer) { $retryTimer = $MaxRetryTimer }
-                    Write-Log "Retry backoff is now $retryTimer seconds"
-                }
-                Write-Log "Failure. Will Retry"
-                $rc = retry-message($Message)
-                # Even if retry-message exceeds max retries, we still have to Acknowledge msg to clear it from the queue
-                $Message.Acknowledge()
-                if ($rc -eq 0)
-                {
-                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Failure from Exchange ActiveMQ handler" `
-                        -SmtpServer $SmtpServer -Body "Failed to process message $MaxRetries time.`r`nMessage: $($Message.Text). `r`nLast Error: $LastError"
-                }
+            Write-Log "Success"
+            $rc = $Message.Acknowledge()
+            if ($isRetry) 
+            { 
+                $retryFailures = 0 
+                $retryTimer=10
             }
         }
-        # Add 'if' blocks here for other message types
         else
         {
-            Write-Log "Ignoring msg: $msg"
-            $rc = $Message.Acknowledge()
+            if ($isRetry) 
+            { 
+                $retryFailures++ 
+                $retryTimer = (1+$retryFailures) * 10
+                if ($retryTimer -gt $MaxRetryTimer) { $retryTimer = $MaxRetryTimer }
+                Write-Log "Retry backoff is now $retryTimer seconds"
+            }
+            Write-Log "Failure. Will Retry"
+            $rc = retry-message($Message)
+            # Even if retry-message exceeds max retries, we still have to Acknowledge msg to clear it from the queue
+            $Message.Acknowledge()
+            if ($rc -eq 0)
+            {
+                Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Failure from Exchange ActiveMQ handler" `
+                    -SmtpServer $SmtpServer -Body "Failed to process message $MaxRetries time.`r`nMessage: $($Message.Text). `r`nLast Error: $LastError"
+            }
         }
+
     }
     catch {
         $_
         # Realistically, we want to log errors but try to recover
         # For now we'll just exit and let Windows Scheduler restart us
-        graceful-exit($AMQSession)
+        write-host "Caught error. Closing sessions"
+        Remove-PSSession $ESession
+        Remove-ActiveMQSession $AMQSession
     }
+    exit 0
 }
 
 
