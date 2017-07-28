@@ -284,7 +284,7 @@ while(1)
                 Write-Log "Loopcounter: $loopcounter. RetryTimer: $retryTimer"
                 # Only try the retry queue every x seconds
                 $Message = $RetryConsumer.Receive([System.TimeSpan]::FromTicks(10000))
-                # Only reset the counter if no message was found, so that if there are 
+                # if no message was found, reset loop counter so that if there are 
                 # multiple messages to be tried, they'll all be tried at once
                 if (!$Message) 
                 { 
@@ -297,6 +297,8 @@ while(1)
                         $retryTimer=10
                     }
                 }
+                # Also reset the loop counter if last retrymsg failed, so that we back off properly.
+                elseif ($retryFailures) { $loopcounter = 1 }
             }
             if (!$Message)
             {
