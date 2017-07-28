@@ -362,8 +362,8 @@ while(1)
         write-host "Caught error. Closing sessions"
         Remove-PSSession $ESession
         Remove-ActiveMQSession $AMQSession
+        exit 0
     }
-    exit 0
 }
 
 
