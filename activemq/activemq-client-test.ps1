@@ -230,7 +230,7 @@ function retry-message($m)
 
 ## main code block
 
-load-settings($SettinsFile)
+load-settings($SettingsFile)
 
 # Set up our Exchange shell
 $e_uri = $ExchangeServer + "/PowerShell/"
