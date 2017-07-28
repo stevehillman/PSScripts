@@ -307,7 +307,7 @@ while(1)
             # Got a message from the Retry queue. Extract the inner message
             $isRetry=$true
             # undef the msg variable before defining it, because retry msgs and regular msgs are slightly different object types
-            Remove-Variable $msg
+            Remove-Variable msg
             [xml]$msgtmp = $Message.Text
             $msg = $msgtmp.retryMessage
             Write-Log "Retrying msg `r`n$($msgtmp.InnerXml)"
@@ -315,7 +315,7 @@ while(1)
         else
         {
             # undef the msg variable before defining it, because retry msgs and regular msgs are slightly different object types
-            Remove-Variable $msg
+            Remove-Variable msg
             [xml]$msg = $Message.Text
         }
 
