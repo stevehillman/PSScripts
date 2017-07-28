@@ -20,6 +20,9 @@ $retryQueueName = "ICAT.amaint.toExchange.retry"
 $me = $env:username
 $LogFile = "C:\Users\$me\activemq_client.log"
 $TokenFile = "C:\Users\$me\REST_Authtoken.txt"
+$ErrorsFromEmail = "amaint@sfu.ca"
+$ErrorsToEmail = @("hillman@sfu.ca")
+$SmtpServer = "mailhost.sfu.ca"
 
 # Maximum number of times to retry processing a message. After this message will be logged and discarded
 $MaxRetries = 30
@@ -103,6 +106,7 @@ function process-amaint-message($xmlmsg)
     }
     catch {
         Write-Log "Error communicating with REST Server for $username. Aborting processing of msg. $_"
+        $LastError = $_
         return 0
     }
 
@@ -119,6 +123,7 @@ function process-amaint-message($xmlmsg)
     catch {
         # Either they don't exist or there's an AD error. Either way we can't continue
         Write-Log "$username not found in AD. Failing: $_"
+        $LastError = $_
         return 0
     }
 
@@ -146,6 +151,7 @@ function process-amaint-message($xmlmsg)
         catch {
             # Now we have a problem. Throw an error and abort for this user
              Write-Log "Unable to enable Exchange Mailbox for ${username}: $_"
+             $LastError = $_
              return 0
         }
     }
@@ -323,11 +329,17 @@ while(1)
                     $retryFailures++ 
                     $retryTimer = (1+$retryFailures) * 10
                     if ($retryTimer -gt $MaxRetryTimer) { $retryTimer = $MaxRetryTimer }
+                    Write-Log "Retry backoff is now $retryTimer seconds"
                 }
                 Write-Log "Failure. Will Retry"
                 $rc = retry-message($Message)
                 # Even if retry-message exceeds max retries, we still have to Acknowledge msg to clear it from the queue
                 $Message.Acknowledge()
+                if ($rc -eq 0)
+                {
+                    Send-MailMesage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Failure from Exchange ActiveMQ handler" `
+                        -SmtpServer $SmtpServer -Body "Failed to process message $MaxRetries time.`r`nMessage: $($Message.Text). `r`nLast Error: $LastError"
+                }
                 # TODO: If RC = 0, retry-message failed - report as an error (email?)
             }
         }
