@@ -79,6 +79,7 @@ function graceful-exit($s)
 # First see if user needs an Exchange mailbox. Lightweight & disabled accts don't
 # Next, check if the user exists in AD. If not, skip this message - we have to wait for AD handler to create user
 # If user exists, enable Exchange mailbox if necessary and then verify account settings
+$LastError=""
 function process-amaint-message($xmlmsg)
 {
     $username = $xmlmsg.synclogin.username
@@ -286,9 +287,13 @@ while(1)
                 if (!$Message) 
                 { 
                     $loopcounter = 1
-                    # Also reset the number of retry Failures, since there's no msgs left 
-                    $retryFailures = 0
-                    $retryTimer=10
+                    # Also reset the number of retry Failures, since there's no msgs left
+                    if ($retryFailures)
+                    {
+                        Write-Log "No messages in retry queue. Clearing retryFailures" 
+                        $retryFailures = 0
+                        $retryTimer=10
+                    }
                 }
             }
             if (!$Message)
@@ -299,12 +304,16 @@ while(1)
 
             # Got a message from the Retry queue. Extract the inner message
             $isRetry=$true
+            # undef the msg variable before defining it, because retry msgs and regular msgs are slightly different object types
+            Remove-Variable $msg
             [xml]$msgtmp = $Message.Text
-            [xml]$msg = $msgtmp.retryMessage.InnerXml
+            $msg = $msgtmp.retryMessage
             Write-Log "Retrying msg `r`n$($msgtmp.InnerXml)"
         }
         else
         {
+            # undef the msg variable before defining it, because retry msgs and regular msgs are slightly different object types
+            Remove-Variable $msg
             [xml]$msg = $Message.Text
         }
 
