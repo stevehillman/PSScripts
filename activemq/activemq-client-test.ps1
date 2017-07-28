@@ -15,19 +15,18 @@ $SettingsFile = "C:\Users\$me\settings.json"
 function load-settings($s_file)
 {
     $settings = ConvertFrom-Json ((Get-Content $s_file) -join "")
-    $global:ExchangeServer = $settings.Get_Item("ExchangeServer")
-    $global:ActiveMQServer = $settings.Get_Item("ActiveMQServer")
-    $global:Username = $settings.Get_Item("amqUsername")
-    $global:Password = $settings.Get_Item("amqPassword")
-    $global:queueName = $settings.Get_Item("QueueName")
-    $global:retryQueueName = $settings.Get_Item("RetryQueueName")
-    $global:RestToken = $settings.Get_Item("RestToken")
-    $global:MaxRetries = $settings.Get_Item("MaxRetries")
-    $global:MaxRetryTimer = $settings.Get_Item("MaxRetryTimer")
-    $global:ExchangeUsersList = $settings.Get_Item("ExchangeUsersList")
-    $global:ErrorsFromEmail = $settings.Get_Item("ErrorsFromEmail")
-    $global:ErrorsToEmail = $settings.Get_Item("ErrorsToEmail") 
-
+    $global:ExchangeServer = $settings.ExchangeServer
+    $global:ActiveMQServer = $settings.ActiveMQServer
+    $global:Username = $settings.amqUsername
+    $global:Password = $settings.amqPassword
+    $global:queueName = $settings.QueueName
+    $global:retryQueueName = $settings.RetryQueueName
+    $global:RestToken = $settings.RestToken
+    $global:MaxRetries = $settings.MaxRetries
+    $global:MaxRetryTimer = $settings.MaxRetryTimer
+    $global:ExchangeUsersList = $settings.ExchangeUsersList
+    $global:ErrorsFromEmail = $settings.ErrorsFromEmail
+    $global:ErrorsToEmail = $settings.ErrorsToEmail
 }
 
 function Write-Log($logmsg)
