@@ -22,7 +22,9 @@ $LogFile = "C:\Users\$me\activemq_client.log"
 $TokenFile = "C:\Users\$me\REST_Authtoken.txt"
 
 # Maximum number of times to retry processing a message. After this message will be logged and discarded
-$MaxRetries = 30 
+$MaxRetries = 30
+# Maximum amount of time to back off between retry msgs
+$MaxRetryTimer = 300 
 # Listname for users who are on Exchange. Ignore ActiveMQ msgs for anyone not on this list
 $ExchangeUsersList = "exchange-users"
 
@@ -52,6 +54,11 @@ catch {
 }
 
 ## Local private functions ##
+
+function Write-Log($logmsg)
+{
+    Add-Content $LogFile "$(date) : $logmsg"
+}
 
 # In case of error, shut down ActiveMQ session and exit
 function graceful-exit($s)
@@ -86,7 +93,7 @@ function process-amaint-message($xmlmsg)
         # for reference: Set-CASMailbox USER -ActiveSyncEnabled $false -ImapEnabled $false -EwsEnabled $false -MAPIEnabled $false -OWAEnabled $false -PopEnabled $false -OWAforDevicesEnabled $false
         # What if we just set AccountDisabled to $true with set-mailbox?
         # maybe disable-mailbox after account is inactive for 1(?) year?
-        Add-Content $Logfile "$(date) : Skipping update for $username. Lightweight or inactive"
+        Write-Log "Skipping update for $username. Lightweight or inactive"
         return 1
     }
 
@@ -95,13 +102,13 @@ function process-amaint-message($xmlmsg)
         $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken
     }
     catch {
-        Add-Content $Logfile "$(date) : Error communicating with REST Server for $username. Aborting processing of msg. $_"
+        Write-Log "Error communicating with REST Server for $username. Aborting processing of msg. $_"
         return 0
     }
 
     if (-Not $rc)
     {
-        Add-Content $Logfile "$(date) : Skipping update for $username. Not a member of $ExchangeUsersList"
+        Write-Log "Skipping update for $username. Not a member of $ExchangeUsersList"
         return 1
     }
 
@@ -111,7 +118,7 @@ function process-amaint-message($xmlmsg)
     }
     catch {
         # Either they don't exist or there's an AD error. Either way we can't continue
-        Add-Content $Logfile "$(date) : $username not found in AD. Failing: $_"
+        Write-Log "$username not found in AD. Failing: $_"
         return 0
     }
 
@@ -138,7 +145,7 @@ function process-amaint-message($xmlmsg)
         }
         catch {
             # Now we have a problem. Throw an error and abort for this user
-             Add-Content $Logfile "$(date) : Unable to enable Exchange Mailbox for ${username}: $_"
+             Write-Log "Unable to enable Exchange Mailbox for ${username}: $_"
              return 0
         }
     }
@@ -186,10 +193,10 @@ function process-amaint-message($xmlmsg)
         $addresses = @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText) -Join ","
         try {
             Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal -EmailAddresses $addresses
-            Add-Content $Logfile "$(date) : Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
+            Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
         }
         catch {
-            Add-Content $Logfile "$(date) : Unable to update Exchange Mailbox for ${username}: $_"
+            Write-Log "Unable to update Exchange Mailbox for ${username}: $_"
             return 0
         }
     }
@@ -222,7 +229,7 @@ function retry-message($m)
 
     if ([int]$mtmp.retryMessage.count -gt $MaxRetries)
     {
-        Add-Content $Logfile "$(date) : FAIL. Max retries exceeded for $($mtmp.InnerXml)"
+        Write-Log "FAIL. Max retries exceeded for $($mtmp.InnerXml)"
         return 0
     }
 
@@ -251,25 +258,31 @@ $RetryConsumer = $AMQSession.CreateConsumer($RetryTarget)
 # if no message arrives, sleep before trying again. That way we can add more logic
 # inside our loop later if we want to (e.g. checking multiple queues for messages)
 
-$loopcounter=1;
+$loopcounter=1
+$retryFailures=0
 
 while(1)
 {
     try {
+        $isRetry = $false
         $Message = $Consumer.Receive([System.TimeSpan]::FromTicks(10000))
         if (!$Message)
         {
             # No message from the main queue. See if we should check the retry queue
             $loopcounter++
-            if ($loopcounter -gt 10)
+            # Only try the retry queue every x seconds, where x is 10x number of failures in a row
+            if ($loopcounter -gt $retryTimer)
             {
-                # Only try the retry queue every 10 seconds
+                # Only try the retry queue every x seconds
                 $Message = $RetryConsumer.Receive([System.TimeSpan]::FromTicks(10000))
-                if (!$Message)
-                {
-                    # Only reset the counter if no message was found, so that if there are 
-                    # multiple messages to be tried, they'll all be tried at once
+                # Only reset the counter if no message was found, so that if there are 
+                # multiple messages to be tried, they'll all be tried at once
+                if (!$Message) 
+                { 
                     $loopcounter = 1
+                    # Also reset the number of retry Failures, since there's no msgs left 
+                    $retryFailures = 0
+                    $retryTimer=10
                 }
             }
             if (!$Message)
@@ -279,9 +292,10 @@ while(1)
             }
 
             # Got a message from the Retry queue. Extract the inner message
+            $isRetry=$true
             [xml]$msgtmp = $Message.Text
             $msg = $msgtmp.retryMessage
-            Add-Content $Logfile "$(date) : Retrying msg `r`n$($msgtmp.InnerXml)"
+            Write-Log "Retrying msg `r`n$($msgtmp.InnerXml)"
         }
         else
         {
@@ -291,15 +305,26 @@ while(1)
         # We currently only care about SyncLogin messages
         if ($msg.syncLogin)
         {
-            Add-Content $Logfile "$(date) : Processing Amaint msg `r`n $($msg.InnerXml)"
+            if (-Not $isRetry) { Write-Log "Processing Amaint msg `r`n $($msg.InnerXml)" }
             if (process-amaint-message($msg))
             {
-                Add-Content $Logfile "$(date) : Success"
+                Write-Log "Success"
                 $rc = $Message.Acknowledge()
+                if ($isRetry) 
+                { 
+                    $retryFailures = 0 
+                    $retryTimer=10
+                }
             }
             else
             {
-                Add-Content $Logfile "$(date) : Failure. Will Retry"
+                if ($isRetry) 
+                { 
+                    $retryFailures++ 
+                    $retryTimer = (1+$retryFailures) * 10
+                    if ($retryTimer -gt $MaxRetryTimer) { $retryTimer = $MaxRetryTimer }
+                }
+                Write-Log "Failure. Will Retry"
                 $rc = retry-message($Message)
                 # Even if retry-message exceeds max retries, we still have to Acknowledge msg to clear it from the queue
                 $Message.Acknowledge()
@@ -309,7 +334,7 @@ while(1)
         # Add 'if' blocks here for other message types
         else
         {
-            Add-Content $Logfile "$(date) : Ignoring msg: $msg"
+            Write-Log "Ignoring msg: $msg"
             $rc = $Message.Acknowledge()
         }
     }
