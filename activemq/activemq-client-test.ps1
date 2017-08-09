@@ -58,20 +58,16 @@ function process-amaint-message($xmlmsg)
     $username = $xmlmsg.synclogin.username
 
     # Skip lightweight and non-active accts
+    $mbenabled = $true
     if ($xmlmsg.syncLogin.login.isLightweight -eq "true" -or $xmlmsg.syncLogin.login.status -ne "active")
     {
-        # TODO: Add check here to disable accounts that go lightweight or disabled
-        # Note that if we use Disable-Mailbox to disconnect an AD user from their mailbox,
-        # we have to use connect-mailbox rather than enable-mailbox to reconnect them
-        # It may be better to create a retention policy that deletes all mail after x days and
-        # change the mailbox's retention policy to that, plus prevent logins by:
-        #  - disabling all protocols for account
-        #  - change email aliases to, e.g "_disabled"
-        # for reference: Set-CASMailbox USER -ActiveSyncEnabled $false -ImapEnabled $false -EwsEnabled $false -MAPIEnabled $false -OWAEnabled $false -PopEnabled $false -OWAforDevicesEnabled $false
-        # What if we just set AccountDisabled to $true with set-mailbox?
+        $mbenabled = $false
+        # TODO: Revisit how accounts get disabled. For now: 
+        #  - prevent logins by disabling all protocols for account
+        #  - change email aliases, appending "_disabled"
+        #  - force HideInGal to True
+        # 
         # maybe disable-mailbox after account is inactive for 1(?) year?
-        Write-Log "Skipping update for $username. Lightweight or inactive"
-        return 1
     }
 
     # Skip users not on Exchange yet. Remove this check when all users are on.
@@ -108,9 +104,15 @@ function process-amaint-message($xmlmsg)
     # See if the user already has an Exchange Mailbox
     try {
         $mb = Get-Mailbox $username
+        $casmb = Get-CASMailbox $username
     }
     catch {
         # It's possible that other errors could trigger a failure here but we'll deal with that below
+        if (-Not $mbenabled)
+        {
+            Write-Log "$username disabled or lightweight and has no Exchange Mailbox. Skipping"
+            return 1
+        }    
         $create = $true
         $update = $true
     }
@@ -139,7 +141,15 @@ function process-amaint-message($xmlmsg)
     $roles = @($xmlmsg.synclogin.person.roles.InnerText)
     if ($roles -contains "staff" -or $roles -contains "faculty" -or [int]$xmlmsg.synclogin.person.sfuVisibility -gt 4)
     {
-        $hideInGal=$false
+        if ($mbenabled)
+        {
+            $hideInGal=$false
+        }
+    }
+
+    if ($mbenabled -ne $casmb.OWAEnabled)
+    {
+        $update=$true
     }
 
     # Check if the account needs updating
@@ -173,10 +183,29 @@ function process-amaint-message($xmlmsg)
     if ($update)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
-        $addresses = @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText) -Join ","
+        $addresses = @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
+        if ($mbenabled)
+        {
+            $addresses = $addresses | % { $_ + "@sfu.ca"}
+        }
+        else 
+        {
+            $addresses = $addresses | % { $_ + "_disabled@sfu.ca"}
+        }
+
         try {
             Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal -EmailAddresses $addresses
             Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
+            if ($mbenabled -ne $casmb.OWAEnabled)
+            {
+                Set-CASMailbox $username -ActiveSyncEnabled $mbenabled `
+                                        -ImapEnabled $mbenabled `
+                                        -EwsEnabled $mbenabled `
+                                        -MAPIEnabled $mbenabled `
+                                        -OWAEnabled $mbenabled `
+                                        -PopEnabled $mbenabled `
+                                        -OWAforDevicesEnabled $mbenabled
+            }
         }
         catch {
             $global:LastError =  "Unable to update Exchange Mailbox for ${username}: $_"
@@ -252,6 +281,8 @@ catch {
         write-host $_.Exception
         exit
 }
+
+Write-Log "Starting up"
 
 $AMQSession = New-ActiveMQSession -Uri $ActiveMQServer -User $Username -Password $Password -ClientAcknowledge
 
