@@ -298,6 +298,7 @@ $RetryConsumer = $AMQSession.CreateConsumer($RetryTarget)
 # inside our loop later if we want to (e.g. checking multiple queues for messages)
 
 $loopcounter=1
+$retryTimer=10
 $retryFailures=0
 $msg=""
 
