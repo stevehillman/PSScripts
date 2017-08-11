@@ -139,7 +139,7 @@ function process-amaint-message($xmlmsg)
     $hideInGal=$true
 
     $roles = @($xmlmsg.synclogin.person.roles.InnerText)
-    if ($roles -contains "staff" -or $roles -contains "faculty" -or [int]$xmlmsg.synclogin.person.sfuVisibility -gt 4)
+    if ($roles -contains "staff" -or $roles -contains "faculty" -or ($roles -contains "other" -and [int]$xmlmsg.synclogin.person.sfuVisibility -gt 4))
     {
         if ($mbenabled)
         {
