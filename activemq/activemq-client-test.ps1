@@ -165,20 +165,19 @@ function process-amaint-message($xmlmsg)
     {
         # Check aliases
         # Get the list of aliases from Exchange
-        # Strip Exchange prefix and domain suffix
         $al_tmp = @($mb.EmailAddresses)
-        # Create empty array of appropriate size to hold scoped aliases
-        $aliases = @($null) * $al_tmp.count
+        # Create empty array to hold unscoped aliases
+        $aliases = @()
 
         $x = 0
         foreach ($alias in $al_tmp)
         {
+            # Strip Exchange prefix and domain suffix
             $a = $alias  -replace ".*:" -replace "@.*"
             if ($a -ne $username)
             {
                 # Only add aliases that aren't the user's computing ID
-                $aliases[$x] = $a
-                $x++
+                $aliases += $a
             }
         }   
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
