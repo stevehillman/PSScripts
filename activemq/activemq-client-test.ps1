@@ -27,6 +27,7 @@ function load-settings($s_file)
     $global:ExchangeUsersList = $settings.ExchangeUsersList
     $global:ErrorsFromEmail = $settings.ErrorsFromEmail
     $global:ErrorsToEmail = $settings.ErrorsToEmail
+    $global:MaxNoActivity = $settings.MaxNoActivity
 }
 
 function Write-Log($logmsg)
@@ -302,6 +303,7 @@ $RetryConsumer = $AMQSession.CreateConsumer($RetryTarget)
 # inside our loop later if we want to (e.g. checking multiple queues for messages)
 
 $loopcounter=1
+$noactivity=0
 $retryTimer=10
 $retryFailures=0
 $msg=""
@@ -337,6 +339,13 @@ while(1)
             }
             if (!$Message)
             {
+                $noactivity++
+                if ($noactivity -gt $MaxNoActivity)
+                {
+                    $noactivity=0
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "No activity from ActiveMQ for $MaxNoActivity seconds" `
+                    -SmtpServer $SmtpServer -Body "Seems a bit fishy."
+                }
                 Start-Sleep -Seconds 1
                 continue
             }
@@ -356,6 +365,7 @@ while(1)
             [xml]$msg = $Message.Text
         }
 
+        $noactivity=0
 
         if (-Not $isRetry) { Write-Log "Processing msg `r`n $($msg.InnerXml)" }
         if (process-message($msg))
