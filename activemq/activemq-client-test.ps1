@@ -200,10 +200,12 @@ function process-amaint-message($xmlmsg)
         $addresses = @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
         if ($mbenabled)
         {
+            $primaryemail = $username + "@sfu.ca"
             $addresses = $addresses | % { $_ + "@sfu.ca"}
         }
         else 
         {
+            $primaryemail = $username + "_disabled@sfu.ca"
             $addresses = $addresses | % { $_ + "_disabled@sfu.ca"}
         }
 
@@ -213,6 +215,7 @@ function process-amaint-message($xmlmsg)
             if ($mbenabled -ne $casmb.OWAEnabled)
             {
                 Write-Log "Setting Account-Enabled state to $mbenabled"
+                Set-Mailbox -Identity $username -PrimarySmtpAddress $primaryemail
                 Set-CASMailbox $username -ActiveSyncEnabled $mbenabled `
                                         -ImapEnabled $mbenabled `
                                         -EwsEnabled $mbenabled `
