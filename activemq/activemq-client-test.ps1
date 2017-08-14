@@ -24,7 +24,8 @@ function load-settings($s_file)
     $global:RestToken = $settings.RestToken
     $global:MaxRetries = $settings.MaxRetries
     $global:MaxRetryTimer = $settings.MaxRetryTimer
-    $global:ExchangeUsersList = $settings.ExchangeUsersList
+    $global:ExchangeUsersListPrimary = $settings.ExchangeUsersListPrimary
+    $global:ExchangeUsersListSecondary = $settings.ExchangeUsersListSecondary
     $global:ErrorsFromEmail = $settings.ErrorsFromEmail
     $global:ErrorsToEmail = $settings.ErrorsToEmail
     $global:MaxNoActivity = $settings.MaxNoActivity
@@ -74,7 +75,11 @@ function process-amaint-message($xmlmsg)
 
     # Skip users not on Exchange yet. Remove this check when all users are on.
     try {
-        $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersList -Member $username -AuthToken $RestToken
+        $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListPrimary -Member $username -AuthToken $RestToken
+        if (-Not $rc)
+        {
+            $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListSecondary -Member $username -AuthToken $RestToken
+        }
     }
     catch {
         $global:LastError =  "Error communicating with REST Server for $username. Aborting processing of msg. $_"
@@ -84,7 +89,7 @@ function process-amaint-message($xmlmsg)
 
     if (-Not $rc)
     {
-        Write-Log "Skipping update for $username. Not a member of $ExchangeUsersList"
+        Write-Log "Skipping update for $username. Not a member of $ExchangeUsersListPrimary or $ExchangeUsersListSecondary"
         return 1
     }
 
@@ -168,8 +173,13 @@ function process-amaint-message($xmlmsg)
         $x = 0
         foreach ($alias in $al_tmp)
         {
-            $aliases[$x] = $alias  -replace ".*:" -replace "@.*"
-            $x++
+            $a = $alias  -replace ".*:" -replace "@.*"
+            if ($a -ne $username)
+            {
+                # Only add aliases that aren't the user's computing ID
+                $aliases[$x] = $a
+                $x++
+            }
         }   
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
         if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($xmlmsg.syncLogin.login.aliases.ChildNodes.InnerText))
