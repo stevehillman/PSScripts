@@ -149,6 +149,7 @@ function process-amaint-message($xmlmsg)
 
     if ($mbenabled -ne $casmb.OWAEnabled)
     {
+        Write-Log "Account status changed. Updating"
         $update=$true
     }
 
@@ -171,11 +172,13 @@ function process-amaint-message($xmlmsg)
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
         if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($xmlmsg.syncLogin.login.aliases.ChildNodes.InnerText))
         {
+            Write-Log "Aliases have changed. Exchange had: $($aliases -join ','). Updating"
             $update = $true
         }
 
         if ($mb.HiddenFromAddressListsEnabled -ne $hideInGal)
         {
+            Write-Log "HideInGal state changed. Updating"
             $update = $true
         }
     }
@@ -198,6 +201,7 @@ function process-amaint-message($xmlmsg)
             Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
             if ($mbenabled -ne $casmb.OWAEnabled)
             {
+                Write-Log "Setting Account-Enabled state to $mbenabled"
                 Set-CASMailbox $username -ActiveSyncEnabled $mbenabled `
                                         -ImapEnabled $mbenabled `
                                         -EwsEnabled $mbenabled `
@@ -314,10 +318,8 @@ while(1)
             # Only try the retry queue every x seconds, where x is 10x number of failures in a row
             if ($loopcounter -gt $retryTimer)
             {
-                Write-Log "Loopcounter: $loopcounter. RetryTimer: $retryTimer"
-                # Only try the retry queue every x seconds
                 $Message = $RetryConsumer.Receive([System.TimeSpan]::FromTicks(10000))
-                # if no message was found, reset loop counter so that if there are 
+                # Only if no message was found, reset loop counter so that if there are 
                 # multiple messages to be tried, they'll all be tried at once
                 if (!$Message) 
                 { 
