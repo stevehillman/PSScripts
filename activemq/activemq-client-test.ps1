@@ -28,6 +28,7 @@ function load-settings($s_file)
     $global:ErrorsFromEmail = $settings.ErrorsFromEmail
     $global:ErrorsToEmail = $settings.ErrorsToEmail
     $global:MaxNoActivity = $settings.MaxNoActivity
+    $global:SmtpServer = $settings.SmtpServer
 }
 
 function Write-Log($logmsg)
