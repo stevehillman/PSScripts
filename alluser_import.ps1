@@ -73,23 +73,21 @@ foreach ($u in $users)
     # accounts for users whose status has changed - e.g. for disabled/lightweight accounts
     # that DO exist in Exchange, disable them
 
-    $create=$false
-	try {
-        $mb = Get-Mailbox $u.SamAccountName
-    }
-    catch {
-        # User doesn't have a mailbox yet. Create one
-        $create=$true
-    }
-    if ($create)
+    $mb = Get-Mailbox $u.SamAccountName
+    # $? == false if get-mailbox fails
+    if (-Not $?)
     {
-        
-        try {
-            Enable-Mailbox -Identity $u.SamAccountName -Name $u.SamAccountName
+        Enable-Mailbox -Identity $u.SamAccountName -Name $u.SamAccountName
+        if ($?)
+        {
             Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true -PrimarySmtpAddress $username+"_not_migrated"
+        }
+        if ($?)
+        {
             Write-Log "Created mailbox for $($u.SamAccountName)"
         }
-        catch {
+        if (-Not $?)
+        {
             Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
         }
     }
