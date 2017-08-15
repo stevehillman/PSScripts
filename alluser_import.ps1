@@ -61,10 +61,15 @@ foreach ($u in $users)
 {
     # Fetch user info from REST
     # Are they lightweight or inactive? If so, 'continue': no need to create
-    $amuser = Get-AOBRestUser 
+    $amuser = Get-AOBRestUser -Username $u.SamAccountName -AuthToken $RestToken
+    if ($amuser.isLightweight -eq "true" -or $amuser.status -ne "active")
+    {
+        Write-Log "Skipping $($u.SamAccountName). Lightweight or Inactive"
+        continue
+    }
 
     # For now, we'll consider this a one-time one-way sync of AD users into Exchange,
-    # but this script could be modified to be rerunnable, modifying existing Exchange
+    # but this script could be modified to be run on a schedule, modifying existing Exchange
     # accounts for users whose status has changed - e.g. for disabled/lightweight accounts
     # that DO exist in Exchange, disable them
 
