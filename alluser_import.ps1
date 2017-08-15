@@ -77,7 +77,7 @@ foreach ($u in $users)
     # $? == false if get-mailbox fails
     if (-Not $?)
     {
-        Enable-Mailbox -Identity $u.SamAccountName -Name $u.SamAccountName
+        Enable-Mailbox -Identity $u.SamAccountName
         if ($?)
         {
             Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true -PrimarySmtpAddress $username+"_not_migrated"

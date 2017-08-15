@@ -131,7 +131,7 @@ function process-amaint-message($xmlmsg)
         # if so, use Connect-Mailbox to reconnect them, as Enable-Mailbox will always create a new mailbox.
         Write-Log "Creating mailbox for $username"
         try {
-            Enable-Mailbox -Identity $username -name $username
+            Enable-Mailbox -Identity $username
             $mb = Get-Mailbox $username
         }
         catch {
