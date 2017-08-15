@@ -80,7 +80,7 @@ foreach ($u in $users)
         Enable-Mailbox -Identity $u.SamAccountName
         if ($?)
         {
-            Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true -PrimarySmtpAddress $username+"_not_migrated"
+            Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true -PrimarySmtpAddress "$($u.SamAccountName)_not_migrated@sfu.ca"
         }
         if ($?)
         {
