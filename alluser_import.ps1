@@ -1,13 +1,28 @@
 # Import all users in OU=SFUUsers into Exchange. This is meant as a one-time import
 # but for each user, checks whether they have a mailbox before creating one
 
+$me = $env:username
+
 # Configurables
+$SettingsFile = "C:\Users\$me\settings.json"
+
 $ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
 $OU = "OU=SFUUsers,DC=Exchtest,DC=sfu,DC=ca"
 
 $me = $env:username
 
+function load-settings($s_file)
+{
+    $settings = ConvertFrom-Json ((Get-Content $s_file) -join "")
+    $global:ExchangeServer = $settings.ExchangeServer
+    $global:RestToken = $settings.RestToken
+    $global:UsersOU = $settings.UsersOU
+}
+
+
 Import-Module -Name PSAOBRestClient
+
+load-settings($SettingsFile)
 
 # Set up our Exchange shell
 $e_uri = $ExchangeServer + "/PowerShell/"
@@ -34,7 +49,7 @@ catch {
 
 # Fetch all users
 
-$users = GET-ADUser -Filter '*' -Searchbase 'OU=SFUUsers,DC=AD,DC=SFU,DC=CA'
+$users = GET-ADUser -Filter '*' -Searchbase $UsersOU
 
 foreach ($u in $users)
 {
