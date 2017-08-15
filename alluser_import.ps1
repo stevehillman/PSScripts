@@ -5,6 +5,7 @@ $me = $env:username
 
 # Configurables
 $SettingsFile = "C:\Users\$me\settings.json"
+$LogFile = "C:\Users\$me\User-Import.log"
 
 $ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
 $OU = "OU=SFUUsers,DC=Exchtest,DC=sfu,DC=ca"
@@ -17,6 +18,11 @@ function load-settings($s_file)
     $global:ExchangeServer = $settings.ExchangeServer
     $global:RestToken = $settings.RestToken
     $global:UsersOU = $settings.UsersOU
+}
+
+function Write-Log($logmsg)
+{
+    Add-Content $LogFile "$(date) : $logmsg"
 }
 
 
@@ -53,6 +59,15 @@ $users = GET-ADUser -Filter '*' -Searchbase $UsersOU
 
 foreach ($u in $users)
 {
+    # Fetch user info from REST
+    # Are they lightweight or inactive? If so, 'continue': no need to create
+    $amuser = Get-AOBRestUser 
+
+    # For now, we'll consider this a one-time one-way sync of AD users into Exchange,
+    # but this script could be modified to be rerunnable, modifying existing Exchange
+    # accounts for users whose status has changed - e.g. for disabled/lightweight accounts
+    # that DO exist in Exchange, disable them
+
     $create=$false
 	try {
         $mb = Get-Mailbox $u.SamAccountName
@@ -63,17 +78,14 @@ foreach ($u in $users)
     }
     if ($create)
     {
-        # Fetch user info from REST
-        # Are they lightweight or inactive? If so, no need to create
-
-        # If creating:
+        
         try {
             Enable-Mailbox -Identity $u.SamAccountName -Name $u.SamAccountName
             Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true -PrimarySmtpAddress $username+"_not_migrated"
-
+            Write-Log "Created mailbox for $($u.SamAccountName)"
         }
         catch {
-            # What do we do if this fails? Likely just write to a log file
+            Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
         }
     }
 }
