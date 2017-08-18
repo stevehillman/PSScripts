@@ -2,6 +2,10 @@
 # A powershell script to read from any ActiveMq provider
 # 
 
+# Ensure that Exchange cmdlets throw a catchable error when they fail
+$ErrorActionPreference = "Stop"
+
+
 Import-Module -Name PSActiveMQClient
 Import-Module -Name PSAOBRestClient
 

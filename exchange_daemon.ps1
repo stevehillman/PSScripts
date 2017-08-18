@@ -15,6 +15,9 @@ $LogFile = "C:\Users\$me\exchange_daemon.log"
 $TokenFile = "C:\Users\$me\exchange_daemon_token.txt"
 $OU = "SFUUsers"
 
+# Ensure that Exchange cmdlets throw a catchable error when they fail
+$ErrorActionPreference = "Stop"
+
 # The token we require from the client to verify auth. Simple string compare
 $Token = Get-Content $TokenFile -totalcount 1
 

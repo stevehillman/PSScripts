@@ -10,7 +10,9 @@ $LogFile = "C:\Users\$me\User-Import.log"
 $ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
 $OU = "OU=SFUUsers,DC=Exchtest,DC=sfu,DC=ca"
 
-$me = $env:username
+# Ensure that Exchange cmdlets throw catchable errors when they fail
+$ErrorActionPreference = "Stop"
+
 
 function load-settings($s_file)
 {
@@ -73,20 +75,22 @@ foreach ($u in $users)
     # accounts for users whose status has changed - e.g. for disabled/lightweight accounts
     # that DO exist in Exchange, disable them
 
-    $mb = Get-Mailbox $u.SamAccountName
-    # $? == false if get-mailbox fails
-    if (-Not $?)
+    $create = $false
+    try {
+        $mb = Get-Mailbox $u.SamAccountName
+    }
+    catch {
+        $create = $true
+    }
+    
+    if ($create)
     {
-        Enable-Mailbox -Identity $u.SamAccountName
-        if ($?)
-        {
+        try {
+            Enable-Mailbox -Identity $u.SamAccountName
             Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true -PrimarySmtpAddress "$($u.SamAccountName)_not_migrated@sfu.ca"
-        }
-        if ($?)
-        {
             Write-Log "Created mailbox for $($u.SamAccountName)"
         }
-        if (-Not $?)
+        catch
         {
             Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
         }
