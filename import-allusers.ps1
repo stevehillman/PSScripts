@@ -87,7 +87,10 @@ foreach ($u in $users)
     {
         try {
             Enable-Mailbox -Identity $u.SamAccountName
-            Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true -PrimarySmtpAddress "$($u.SamAccountName)_not_migrated@sfu.ca"
+            Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true `
+                        -PrimarySmtpAddress "$($u.SamAccountName)_not_migrated@sfu.ca" `
+                        -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
+            Set-MailboxMessageConfiguration $u.SamAccountName -IsReplyAllTheDefaultResponse $false
             Write-Log "Created mailbox for $($u.SamAccountName)"
         }
         catch
