@@ -8,12 +8,30 @@
 [cmdletbinding()]
 param([switch]$Testing)
 
-$ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
 $ListenPort = 2016
 $me = $env:username
+$SettingsFile = "C:\Users\$me\settings.json"
 $LogFile = "C:\Users\$me\exchange_daemon.log"
 $TokenFile = "C:\Users\$me\exchange_daemon_token.txt"
 $OU = "SFUUsers"
+
+function load-settings($s_file)
+{
+    $settings = ConvertFrom-Json ((Get-Content $s_file) -join "")
+    $global:ExchangeServer = $settings.ExchangeServer
+    $global:RestToken = $settings.RestToken
+    $global:ExchangeUsersListPrimary = $settings.ExchangeUsersListPrimary
+    $global:ExchangeUsersListSecondary = $settings.ExchangeUsersListSecondary
+    $global:ErrorsFromEmail = $settings.ErrorsFromEmail
+    $global:ErrorsToEmail = $settings.ErrorsToEmail
+    $global:SmtpServer = $settings.SmtpServer
+    $global:Domain = $settings.Domain
+}
+
+function Write-Log($logmsg)
+{
+    Add-Content $LogFile "$(date) : $logmsg"
+}
 
 # Ensure that Exchange cmdlets throw a catchable error when they fail
 $ErrorActionPreference = "Stop"
@@ -23,6 +41,8 @@ $Token = Get-Content $TokenFile -totalcount 1
 
 # Import dependencies
 Import-Module -Name PSAOBRestClient
+
+load-settings($SettingsFile)
 
 # Set up our Exchange shell
 $e_uri = $ExchangeServer + "/PowerShell/"
@@ -62,7 +82,7 @@ try {
 
         # Start the connection
         $Connection = $Listener.AcceptTcpClient();
-        Add-Content $Logfile "Connection from: $($Connection.Client.RemoteEndPoint)"
+        Write-Log "Connection from: $($Connection.Client.RemoteEndPoint)"
 
         $Stream = $Connection.GetStream()
         $Reader = New-Object System.IO.StreamReader $Stream
@@ -75,7 +95,7 @@ try {
          
             $line = $Reader.ReadLine()
 
-            Add-Content $Logfile "Processing command $line"
+            Write-Log $Logfile "Processing command $line"
             # Process command
             if ($line -Match "^$Token getusers")
             {
@@ -116,7 +136,7 @@ try {
                 # Strip domain, if present
                 $samacct = $samacct -replace "@.*",""
 
-                $upn = $samacct + "@its.sfu.ca"
+                $upn = $samacct + "@" + $Domain
                 
                 try
                 {
@@ -145,6 +165,78 @@ try {
                 {
                     write-Host $_.toString()
                     # $Writer.write("err: Error executing request: $($_.Exception.Message) `n")
+                }
+            }
+            elseif ($line -Match "^$Token enableuser ([a-z\-]+)")
+            {
+                $username = $Matches[1]
+                try 
+                {
+                    # Fetch user info from REST
+                    # Are they lightweight or inactive? If so, 'continue': no need to create
+                    $amuser = Get-AOBRestUser -Username $u.SamAccountName -AuthToken $RestToken
+                    if ($amuser.isLightweight -eq "true" -or $amuser.status -ne "active")
+                    {
+                        Write-Log "Skipping $($u.SamAccountName). Lightweight or Inactive"
+                        $Resp = "`"ok. Account lightweight or inactive. Skipping enable`""
+                    }
+                    else 
+                    {
+                        $create = $false
+                        try {
+                            $mb = Get-Mailbox $u.SamAccountName
+                        }
+                        catch {
+                            $create = $true
+                            # Clear error stack
+                            $error.Clear()
+                        }
+
+                        # TODO: To calculate this properly, we need the sfuVisibility flag from Amaint
+                        $HideInGal = $true
+                        if ($amuser.roles -contains "Staff" -or $amuser.roles -contains "Faculty")
+                        {
+                            $HideInGal = $false
+                        }
+
+                        # TODO: need aliases from REST Server. Not yet available
+                        # $addresses = $amuser.aliases
+                        # $addresses = $addresses | % { $_ + "@sfu.ca"}
+                        
+                        if ($create)
+                        {
+                            try {
+                                Enable-Mailbox -Identity $u.SamAccountName
+                                Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $HideInGal `
+                                            -PrimarySmtpAddress "$($u.SamAccountName)@sfu.ca" `
+                                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
+                                            # -EmailAddresses $addresses
+                                Set-MailboxMessageConfiguration $u.SamAccountName -IsReplyAllTheDefaultResponse $false
+                                Write-Log "Created mailbox for $($u.SamAccountName)"
+                                $Resp = "`"ok. Mailbox created`""
+
+                            }
+                            catch
+                            {
+                                Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
+                            }
+                        }
+                        else
+                        # Mailbox exists (this should virtually always be the case) 
+                        {
+                            try {
+                                Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $HideInGal `
+                                            -PrimarySmtpAddress "$($u.SamAccountName)@sfu.ca" `
+                                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
+                                            # -EmailAddresses $addresses
+                                Set-MailboxMessageConfiguration $u.SamAccountName -IsReplyAllTheDefaultResponse $false
+                                Write-Log "Enabled mailbox for $($u.SamAccountName)"
+                                $Resp = "`"ok. Mailbox enabled`""
+                            }
+                            
+                        }
+                    }
+
                 }
             }
 
