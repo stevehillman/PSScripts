@@ -95,7 +95,7 @@ try {
          
             $line = $Reader.ReadLine()
 
-            Write-Log $Logfile "Processing command $line"
+            Write-Log "Processing command $line"
             # Process command
             if ($line -Match "^$Token getusers")
             {
