@@ -233,6 +233,10 @@ try {
                                 Write-Log "Enabled mailbox for $($u.SamAccountName)"
                                 $Resp = "`"ok. Mailbox enabled`""
                             }
+                            catch
+                            {
+                                Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
+                            }
                             
                         }
                     }
@@ -240,7 +244,6 @@ try {
                 }
                 catch {
                     write-Log $_.toString()
-                    $Writer.write("err: Error executing request: $($_.Exception.Message) `n")
                 }
             }
 
