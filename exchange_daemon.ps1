@@ -238,6 +238,10 @@ try {
                     }
 
                 }
+                catch {
+                    write-Log $_.toString()
+                    $Writer.write("err: Error executing request: $($_.Exception.Message) `n")
+                }
             }
 
 
