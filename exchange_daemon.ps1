@@ -172,6 +172,9 @@ try {
                 $username = $Matches[1]
                 try 
                 {
+                    # Verify the user is in AD. This will fail and be caught by the final 'catch' if the user doesn't exist
+                    $aduser = Get-ADUser $username
+                    
                     # Fetch user info from REST
                     # Are they lightweight or inactive? If so, 'continue': no need to create
                     $amuser = Get-AOBRestUser -Username $username -AuthToken $RestToken
