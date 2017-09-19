@@ -174,17 +174,17 @@ try {
                 {
                     # Fetch user info from REST
                     # Are they lightweight or inactive? If so, 'continue': no need to create
-                    $amuser = Get-AOBRestUser -Username $u.SamAccountName -AuthToken $RestToken
+                    $amuser = Get-AOBRestUser -Username $username -AuthToken $RestToken
                     if ($amuser.isLightweight -eq "true" -or $amuser.status -ne "active")
                     {
-                        Write-Log "Skipping $($u.SamAccountName). Lightweight or Inactive"
+                        Write-Log "Skipping $username . Lightweight or Inactive"
                         $Resp = "`"ok. Account lightweight or inactive. Skipping enable`""
                     }
                     else 
                     {
                         $create = $false
                         try {
-                            $mb = Get-Mailbox $u.SamAccountName
+                            $mb = Get-Mailbox $username
                         }
                         catch {
                             $create = $true
@@ -206,36 +206,36 @@ try {
                         if ($create)
                         {
                             try {
-                                Enable-Mailbox -Identity $u.SamAccountName
-                                Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $HideInGal `
-                                            -PrimarySmtpAddress "$($u.SamAccountName)@sfu.ca" `
+                                Enable-Mailbox -Identity $username
+                                Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
+                                            -PrimarySmtpAddress "$($username)@sfu.ca" `
                                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
                                             # -EmailAddresses $addresses
-                                Set-MailboxMessageConfiguration $u.SamAccountName -IsReplyAllTheDefaultResponse $false
-                                Write-Log "Created mailbox for $($u.SamAccountName)"
+                                Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
+                                Write-Log "Created mailbox for $($username)"
                                 $Resp = "`"ok. Mailbox created`""
 
                             }
                             catch
                             {
-                                Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
+                                Write-Log "Failed to create mailbox for $username . $_"
                             }
                         }
                         else
                         # Mailbox exists (this should virtually always be the case) 
                         {
                             try {
-                                Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $HideInGal `
-                                            -PrimarySmtpAddress "$($u.SamAccountName)@sfu.ca" `
+                                Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
+                                            -PrimarySmtpAddress "$($username)@sfu.ca" `
                                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
                                             # -EmailAddresses $addresses
-                                Set-MailboxMessageConfiguration $u.SamAccountName -IsReplyAllTheDefaultResponse $false
-                                Write-Log "Enabled mailbox for $($u.SamAccountName)"
+                                Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
+                                Write-Log "Enabled mailbox for $username"
                                 $Resp = "`"ok. Mailbox enabled`""
                             }
                             catch
                             {
-                                Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
+                                Write-Log "Failed to create mailbox for $username . $_"
                             }
                             
                         }
