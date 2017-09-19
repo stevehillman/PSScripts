@@ -181,7 +181,7 @@ try {
                     if ($amuser.isLightweight -eq "true" -or $amuser.status -ne "active")
                     {
                         Write-Log "Skipping $username . Lightweight or Inactive"
-                        $Resp = "`"ok. Account lightweight or inactive. Skipping enable`""
+                        $Resp = "ok. Account lightweight or inactive. Skipping enable"
                     }
                     else 
                     {
@@ -216,7 +216,7 @@ try {
                                             # -EmailAddresses $addresses
                                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
                                 Write-Log "Created mailbox for $($username)"
-                                $Resp = "`"ok. Mailbox created`""
+                                $Resp = "ok. Mailbox created"
 
                             }
                             catch
@@ -234,7 +234,7 @@ try {
                                             # -EmailAddresses $addresses
                                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
                                 Write-Log "Enabled mailbox for $username"
-                                $Resp = "`"ok. Mailbox enabled`""
+                                $Resp = "ok. Mailbox enabled"
                             }
                             catch
                             {
