@@ -214,7 +214,9 @@ function process-amaint-message($xmlmsg)
         }
 
         try {
-            Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal -EmailAddresses $addresses `
+            Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal `
+                        -EmailAddressPolicyEnabled $false `
+                        -EmailAddresses $addresses `
                         -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
             Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
             Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"

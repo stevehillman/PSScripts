@@ -218,6 +218,7 @@ try {
                             try {
                                 Enable-Mailbox -Identity $username
                                 Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
+                                            -EmailAddressPolicyEnabled $false `
                                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                                             -EmailAddresses $addresses
                                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
@@ -235,6 +236,7 @@ try {
                         {
                             try {
                                 Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
+                                            -EmailAddressPolicyEnabled $false `
                                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                                             -EmailAddresses $addresses
                                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
@@ -266,6 +268,7 @@ try {
 
                     # Change alias and hide in GAL
                     Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $true `
+                                -EmailAddressPolicyEnabled $false `
                                 -EmailAddresses "SMTP:$($username)_not_migrated@sfu.ca"
                                 
                     $Resp = "ok. Mailbox disabled"
