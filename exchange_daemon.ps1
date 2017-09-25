@@ -205,7 +205,7 @@ try {
                         }
 
                         $HideInGal = $true
-                        if ($amuser.roles -contains "ftaff" -or $amuser.roles -contains "faculty" -or ($amuser.roles -contains "other" -and $amuser.visibility -gt 4))
+                        if ($amuser.roles -contains "staff" -or $amuser.roles -contains "faculty" -or ($amuser.roles -contains "other" -and $amuser.visibility -gt 4))
                         {
                             $HideInGal = $false
                         }
