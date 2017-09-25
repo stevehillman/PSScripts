@@ -218,7 +218,6 @@ try {
                             try {
                                 Enable-Mailbox -Identity $username
                                 Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
-                                            -PrimarySmtpAddress "$($username)@sfu.ca" `
                                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                                             -EmailAddresses $addresses
                                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
@@ -236,7 +235,6 @@ try {
                         {
                             try {
                                 Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
-                                            -PrimarySmtpAddress "$($username)@sfu.ca" `
                                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                                             -EmailAddresses $addresses
                                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
@@ -265,6 +263,8 @@ try {
                 {
                     # Make sure the mailbox for this user actually does exist
                     $mb = Get-Mailbox $username
+
+                    # Change alias and hide in GAL
                     Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $true `
                                 -EmailAddresses "SMTP:$($username)_not_migrated@sfu.ca"
                                 

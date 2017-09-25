@@ -201,7 +201,7 @@ function process-amaint-message($xmlmsg)
     if ($update)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
-        $addresses = @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
+        $addresses = @($username, @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText))
         if ($mbenabled)
         {
             $primaryemail = $username + "@sfu.ca"
