@@ -85,6 +85,8 @@ try {
         Write-Log "Connection from: $($Connection.Client.RemoteEndPoint)"
 
         $Stream = $Connection.GetStream()
+        # This should set a 5 second read timeout on input
+        $Stream.ReadTimeout = 5000
         $Reader = New-Object System.IO.StreamReader $Stream
         $Writer = New-Object System.IO.StreamWriter $Stream
         $Writer.AutoFlush = $True
