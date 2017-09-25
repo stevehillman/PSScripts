@@ -197,14 +197,13 @@ try {
 
                         # TODO: To calculate this properly, we need the sfuVisibility flag from Amaint
                         $HideInGal = $true
-                        if ($amuser.roles -contains "Staff" -or $amuser.roles -contains "Faculty")
+                        if ($amuser.roles -contains "ftaff" -or $amuser.roles -contains "faculty" -or ($amuser.roles -contains "other" -and $amuser.visibility -gt 4))
                         {
                             $HideInGal = $false
                         }
 
-                        # TODO: need aliases from REST Server. Not yet available
-                        # $addresses = $amuser.aliases
-                        # $addresses = $addresses | % { $_ + "@sfu.ca"}
+                        $addresses = $amuser.aliases
+                        $addresses = $addresses | % { $_ + "@sfu.ca"}
                         
                         if ($create)
                         {
@@ -212,8 +211,8 @@ try {
                                 Enable-Mailbox -Identity $username
                                 Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
                                             -PrimarySmtpAddress "$($username)@sfu.ca" `
-                                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
-                                            # -EmailAddresses $addresses
+                                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
+                                            -EmailAddresses $addresses
                                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
                                 Write-Log "Created mailbox for $($username)"
                                 $Resp = "ok. Mailbox created"
@@ -230,8 +229,8 @@ try {
                             try {
                                 Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
                                             -PrimarySmtpAddress "$($username)@sfu.ca" `
-                                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
-                                            # -EmailAddresses $addresses
+                                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
+                                            -EmailAddresses $addresses
                                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
                                 Write-Log "Enabled mailbox for $username"
                                 $Resp = "ok. Mailbox enabled"
@@ -249,7 +248,23 @@ try {
                     write-Log $_.toString()
                 }
             }
+            elseif ($line -Match "^$Token disableuser ([a-z\-]+)")
+            {
+                $username = $Matches[1]
+                try 
+                {
+                    # Make sure the mailbox for this user actually does exist
+                    $mb = Get-Mailbox $username
+                    Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $true `
+                                -PrimarySmtpAddress "$($username)_not_migrated@sfu.ca" `
+                                -EmailAddresses @()
+                    $Resp = "ok. Mailbox disabled"
+                }
+                catch {
+                    write-Log $_.toString()
+                }
 
+            }
 
             elseif ($line -Match "^quit")
             {
