@@ -210,7 +210,7 @@ try {
                             $HideInGal = $false
                         }
 
-                        $addresses = @($username, $amuser.aliases)
+                        $addresses = @($username) + $amuser.aliases
                         $addresses = $addresses | % { $_ + "@sfu.ca"}
                         
                         if ($create)
