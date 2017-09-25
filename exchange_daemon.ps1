@@ -99,6 +99,7 @@ try {
             # Process command
             if ($line -Match "^$Token getusers")
             {
+                # Fetch all users with mailboxes, returning a subset of attributes. Return as a JSON array
                 try {
                     $Resp =  get-mailbox | select-object -property PrimarySmtpAddress,`
                                                                RecipientTypeDetails,`
@@ -114,16 +115,20 @@ try {
             }
             elseif ($line -Match "^$Token getuser ([a-z\-]+)")
             {
+                # Fetch a single user mailbox. Returns all attributes as a JSON hash
                 $Resp = Get-Mailbox $Matches[1] | ConvertTo-Json
             }
 
             elseif ($line -Match "^$Token getqueue")
             {
+                # Return all Exchange server queues as a JSON blob
                 $Resp = Get-ExchangeServer | Get-Queue | ConvertTo-Json
             }
 
             elseif ($line -Match "^$Token new(user|room|equipment) (.+)")
             {
+                # Create a new user or resource mailbox. Newuser functionality will be disabled in prod
+                # Attributes of new mailbox are passed in as a JSON string
                 $type = $Matches[1]
                 $json = $Matches[2]
                 $userobj = ConvertFrom-Json $json
@@ -169,6 +174,10 @@ try {
             }
             elseif ($line -Match "^$Token enableuser ([a-z\-]+)")
             {
+                # Enable the mailbox of a user. This is "enabling" in the SFU sense, not Exchange sense.
+                # The mailbox's aliases are set properly, removing the "_not_migrated" suffix, and the HideInGal flag is 
+                # set according to the account's role(s)
+                # If the mailbox doesn't yet exist, it'll be created, but this should very rarely happen
                 $username = $Matches[1]
                 try 
                 {
@@ -195,14 +204,13 @@ try {
                             $error.Clear()
                         }
 
-                        # TODO: To calculate this properly, we need the sfuVisibility flag from Amaint
                         $HideInGal = $true
                         if ($amuser.roles -contains "ftaff" -or $amuser.roles -contains "faculty" -or ($amuser.roles -contains "other" -and $amuser.visibility -gt 4))
                         {
                             $HideInGal = $false
                         }
 
-                        $addresses = $amuser.aliases
+                        $addresses = @($username, $amuser.aliases)
                         $addresses = $addresses | % { $_ + "@sfu.ca"}
                         
                         if ($create)
@@ -250,14 +258,16 @@ try {
             }
             elseif ($line -Match "^$Token disableuser ([a-z\-]+)")
             {
+                # disable (make invisible) a user's mailbox. This will normally only ever be used 
+                # if there was a problem migrating a user and the 'enableuser' function needs to be backed out
                 $username = $Matches[1]
                 try 
                 {
                     # Make sure the mailbox for this user actually does exist
                     $mb = Get-Mailbox $username
                     Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $true `
-                                -PrimarySmtpAddress "$($username)_not_migrated@sfu.ca" `
-                                -EmailAddresses @()
+                                -EmailAddresses "SMTP:$($username)_not_migrated@sfu.ca"
+                                
                     $Resp = "ok. Mailbox disabled"
                 }
                 catch {
