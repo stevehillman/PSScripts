@@ -1,5 +1,20 @@
-# Import all users in OU=SFUUsers into Exchange. This is meant as a one-time import
-# but for each user, checks whether they have a mailbox before creating one
+<#
+.SYNOPSIS
+    Import AD users into Exchange
+.DESCRIPTION
+    Import all members of a maillist into Exchange from AD. This is meant as a one-time import
+    but for each user, it checks whether they have a mailbox before creating one
+.PARAMETER Name
+    Name of the maillist to use to determine which users to import. Use "All" to import all users. If importing all users,
+    the OU listed in the settings.json is used as the source of users
+#>
+
+# Force user to provide either a listname or "all"
+# If a listname is provided, only members of that list are imported into Exchange
+[cmdletbinding()]
+param(
+    [parameter(Mandatory=$true)][string]$Name
+    )
 
 $me = $env:username
 
@@ -56,11 +71,28 @@ catch {
 
 
 # Fetch all users
-
-$users = GET-ADUser -Filter '*' -Searchbase $UsersOU
+if ($Name -eq "All")
+{
+    $users = GET-ADUser -Filter '*' -Searchbase $UsersOU
+}
+else 
+{
+    $users = Get-AOBRestMaillistMembers -Maillist $Name -AuthToken $RestToken     
+}
 
 foreach ($u in $users)
 {
+    if ($u -Match "@")
+    {
+        # Skip non-local list members
+        Continue
+    }
+    if ($Name -ne "All")
+    {
+        $uad = Get-ADUser $u 
+        $u = $uad
+    }
+    
     # Fetch user info from REST
     # Are they lightweight or inactive? If so, 'continue': no need to create
     $amuser = Get-AOBRestUser -Username $u.SamAccountName -AuthToken $RestToken
