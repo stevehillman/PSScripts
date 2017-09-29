@@ -183,76 +183,70 @@ try {
                 $username = $Matches[1]
                 try 
                 {
-                    # Verify the user is in AD. This will fail and be caught by the final 'catch' if the user doesn't exist
-                    $aduser = Get-ADUser $username
-                    
-                    # Fetch user info from REST
-                    # Are they lightweight or inactive? If so, 'continue': no need to create
-                    $amuser = Get-AOBRestUser -Username $username -AuthToken $RestToken
-                    if ($amuser.isLightweight -eq "true" -or $amuser.status -ne "active")
+                    if ($username -Matches "^loc-" -or $username -Matches "^equip-")
                     {
-                        Write-Log "Skipping $username . Lightweight or Inactive"
-                        $Resp = "ok. Account lightweight or inactive. Skipping enable"
+                        $HideInGal = $false
+                        $addresses = @($username)
                     }
                     else 
                     {
-                        $create = $false
-                        try {
-                            $mb = Get-Mailbox $username
-                        }
-                        catch {
-                            $create = $true
-                            # Clear error stack
-                            $error.Clear()
-                        }
+                        # Verify the user is in AD. This will fail and be caught by the final 'catch' if the user doesn't exist
+                        $aduser = Get-ADUser $username
+                    
 
-                        $HideInGal = $true
-                        if ($amuser.roles -contains "staff" -or $amuser.roles -contains "faculty" -or ($amuser.roles -contains "other" -and $amuser.visibility -gt 4))
+                        # Fetch user info from REST
+                        # Are they lightweight or inactive? If so, 'continue': no need to create
+                        $amuser = Get-AOBRestUser -Username $username -AuthToken $RestToken
+                        if ($amuser.isLightweight -eq "true" -or $amuser.status -ne "active")
                         {
-                            $HideInGal = $false
+                            Write-Log "Skipping $username . Lightweight or Inactive"
+                            throw "Account lightweight or inactive and can't be enabled"
                         }
-
-                        $addresses = @($username) + $amuser.aliases
-                        $addresses = $addresses | % { $_ + "@sfu.ca"}
-                        
-                        if ($create)
+                        else 
                         {
-                            try {
-                                Enable-Mailbox -Identity $username
-                                Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
-                                            -EmailAddressPolicyEnabled $false `
-                                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
-                                            -EmailAddresses $addresses
-                                Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
-                                Write-Log "Created mailbox for $($username)"
-                                $Resp = "ok. Mailbox created"
-
-                            }
-                            catch
+                            $HideInGal = $true
+                            if ($amuser.roles -contains "staff" -or $amuser.roles -contains "faculty" -or ($amuser.roles -contains "other" -and $amuser.visibility -gt 4))
                             {
-                                Write-Log "Failed to create mailbox for $username . $_"
+                                $HideInGal = $false
                             }
-                        }
-                        else
-                        # Mailbox exists (this should virtually always be the case) 
-                        {
-                            try {
-                                Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
-                                            -EmailAddressPolicyEnabled $false `
-                                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
-                                            -EmailAddresses $addresses
-                                Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
-                                Write-Log "Enabled mailbox for $username"
-                                $Resp = "ok. Mailbox enabled"
-                            }
-                            catch
-                            {
-                                Write-Log "Failed to create mailbox for $username . $_"
-                            }
-                            
+
+                            $addresses = @($username) + $amuser.aliases
                         }
                     }
 
+                    $create = $false
+                    try {
+                        $mb = Get-Mailbox $username
+                    }
+                    catch {
+                        $create = $true
+                        # Clear error stack
+                        $error.Clear()
+                    }
+
+                    $addresses = $addresses | % { $_ + "@sfu.ca"}
+            
+                    try 
+                    {
+                        if ($create)
+                        {
+                            Enable-Mailbox -Identity $username
+                            Write-Log "Created mailbox for $($username)"
+
+                        }
+                        Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
+                                    -EmailAddressPolicyEnabled $false `
+                                    -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
+                                    -EmailAddresses $addresses
+                        Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
+                        Write-Log "Enabled mailbox for $username"
+                        $Resp = "ok. Mailbox enabled"
+
+                    }
+                    catch
+                    {
+                        Write-Log "Failed to create mailbox for $username . $_"
+                    }
                 }
                 catch {
                     write-Log $_.toString()
