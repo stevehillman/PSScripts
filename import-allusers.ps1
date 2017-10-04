@@ -91,6 +91,7 @@ foreach ($u in $users)
     {
         $uad = Get-ADUser $u 
         $u = $uad
+        Write-host "Processing $u"
     }
     
     # Fetch user info from REST
