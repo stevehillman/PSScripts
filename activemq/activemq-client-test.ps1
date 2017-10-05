@@ -34,6 +34,7 @@ function load-settings($s_file)
     $global:ErrorsToEmail = $settings.ErrorsToEmail
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
+    $global:AddNewUsers = $settings.AddNewUsers
 }
 
 function Write-Log($logmsg)
@@ -78,23 +79,26 @@ function process-amaint-message($xmlmsg)
     }
 
     # Skip users not on Exchange yet. Remove this check when all users are on.
-    try {
-        $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListPrimary -Member $username -AuthToken $RestToken
+    if ($AddNewUsers -ne 1)
+    {
+        try {
+            $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListPrimary -Member $username -AuthToken $RestToken
+            if (-Not $rc)
+            {
+                $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListSecondary -Member $username -AuthToken $RestToken
+            }
+        }
+        catch {
+            $global:LastError =  "Error communicating with REST Server for $username. Aborting processing of msg. $_"
+            Write-Log $LastError
+            return 0
+        }
+
         if (-Not $rc)
         {
-            $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListSecondary -Member $username -AuthToken $RestToken
+            Write-Log "Skipping update for $username. Not a member of $ExchangeUsersListPrimary or $ExchangeUsersListSecondary"
+            return 1
         }
-    }
-    catch {
-        $global:LastError =  "Error communicating with REST Server for $username. Aborting processing of msg. $_"
-        Write-Log $LastError
-        return 0
-    }
-
-    if (-Not $rc)
-    {
-        Write-Log "Skipping update for $username. Not a member of $ExchangeUsersListPrimary or $ExchangeUsersListSecondary"
-        return 1
     }
 
     Write-Log "Processing update for $username"
@@ -198,6 +202,13 @@ function process-amaint-message($xmlmsg)
         }
     }
 
+    if ($AddNewUsers -eq 1 -and $mb.PrimarySmtpAddress -Match "_not_migrated")
+    {
+        # Once all new users go into Exchange, process every account EXCEPT accounts
+        # that were imported from Zimbra but haven't been migrated yet
+        $update = $false
+    }
+    
     if ($update)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
