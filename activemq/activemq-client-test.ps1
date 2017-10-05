@@ -105,17 +105,14 @@ function process-amaint-message($xmlmsg)
     Write-Log "Processing update for $username"
 
     # Verify the user in AD
-    if (!$PassiveMode)
-    {
-        try {
-            $aduser = Get-ADUser $username
-        }
-        catch {
-            # Either they don't exist or there's an AD error. Either way we can't continue
-            $global:LastError = "$username not found in AD. Failing: $_"
-            Write-Log $LastError
-            return 0
-        }
+    try {
+        $aduser = Get-ADUser $username
+    }
+    catch {
+        # Either they don't exist or there's an AD error. Either way we can't continue
+        $global:LastError = "$username not found in AD. Failing: $_"
+        Write-Log $LastError
+        return 0
     }
 
     $create = $false
