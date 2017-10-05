@@ -34,7 +34,8 @@ function load-settings($s_file)
     $global:ErrorsToEmail = $settings.ErrorsToEmail
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
-    $global:AddNewUsers = $settings.AddNewUsers
+    $global:AddNewUsers = ($settings.AddNewUsers -eq "true")
+    $global:PassiveMode = ($settings.PassiveMode -eq "true")
 }
 
 function Write-Log($logmsg)
@@ -79,7 +80,7 @@ function process-amaint-message($xmlmsg)
     }
 
     # Skip users not on Exchange yet. Remove this check when all users are on.
-    if ($AddNewUsers -ne 1)
+    if (!$AddNewUsers -and !$PassiveMode)
     {
         try {
             $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListPrimary -Member $username -AuthToken $RestToken
@@ -104,14 +105,17 @@ function process-amaint-message($xmlmsg)
     Write-Log "Processing update for $username"
 
     # Verify the user in AD
-    try {
-        $aduser = Get-ADUser $username
-    }
-    catch {
-        # Either they don't exist or there's an AD error. Either way we can't continue
-        $global:LastError = "$username not found in AD. Failing: $_"
-        Write-Log $LastError
-        return 0
+    if (!$PassiveMode)
+    {
+        try {
+            $aduser = Get-ADUser $username
+        }
+        catch {
+            # Either they don't exist or there's an AD error. Either way we can't continue
+            $global:LastError = "$username not found in AD. Failing: $_"
+            Write-Log $LastError
+            return 0
+        }
     }
 
     $create = $false
@@ -138,15 +142,26 @@ function process-amaint-message($xmlmsg)
         # TODO: We need to determine whether the user previously had an Exchange mailbox and
         # if so, use Connect-Mailbox to reconnect them, as Enable-Mailbox will always create a new mailbox.
         Write-Log "Creating mailbox for $username"
-        try {
-            Enable-Mailbox -Identity $username
-            $mb = Get-Mailbox $username
+        if ($PassiveMode)
+        {
+            Write-Log "PassiveMode: Enable-Mailbox -Identity $username"
+            # Simulate what a get-mailbox call would return
+            $mb.EmailAddresses = @("$($username)@sfu.ca")
+            $mb.HiddenFromAddressListsEnabled = $true
+            $casmb.OWAEnabled = $true
         }
-        catch {
-            # Now we have a problem. Throw an error and abort for this user
-             $global:LastError = "Unable to enable Exchange Mailbox for ${username}: $_"
-             Write-Log $LastError
-             return 0
+        else 
+        {
+            try {
+                Enable-Mailbox -Identity $username
+                $mb = Get-Mailbox $username
+            }
+            catch {
+                # Now we have a problem. Throw an error and abort for this user
+                 $global:LastError = "Unable to enable Exchange Mailbox for ${username}: $_"
+                 Write-Log $LastError
+                 return 0
+            }
         }
     }
 
@@ -202,13 +217,13 @@ function process-amaint-message($xmlmsg)
         }
     }
 
-    if ($AddNewUsers -eq 1 -and $mb.PrimarySmtpAddress -Match "_not_migrated")
+    if ($AddNewUsers -and $mb.PrimarySmtpAddress -Match "_not_migrated")
     {
         # Once all new users go into Exchange, process every account EXCEPT accounts
         # that were imported from Zimbra but haven't been migrated yet
         $update = $false
     }
-    
+
     if ($update)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
@@ -225,25 +240,40 @@ function process-amaint-message($xmlmsg)
         }
 
         try {
-            Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal `
-                        -EmailAddressPolicyEnabled $false `
-                        -EmailAddresses $addresses `
-                        -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
-            Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
-            Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
+            if ($PassiveMode)
+            {
+                Write-Log "PassiveMode: Set-Mailbox -Identity $username -HideInGal $hideInGal -EmailAddresses $addresses"
+            }
+            else 
+            {
+                Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal `
+                            -EmailAddressPolicyEnabled $false `
+                            -EmailAddresses $addresses `
+                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
+                Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
+                Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
+            }
 
             if ($mbenabled -ne $casmb.OWAEnabled)
             {
-                Write-Log "Setting Account-Enabled state to $mbenabled"
-                Set-Mailbox -Identity $username -PrimarySmtpAddress $primaryemail
-                Set-CASMailbox $username -ActiveSyncEnabled $mbenabled `
+                if ($PassiveMode)
+                {
+                    Write-Log "PassiveMode: Set-CASMailbox $username -Enabled $mbenabled"
+                }
+                else 
+                {    
+                    Write-Log "Setting Account-Enabled state to $mbenabled"
+                    Set-Mailbox -Identity $username -PrimarySmtpAddress $primaryemail
+                    Set-CASMailbox $username -ActiveSyncEnabled $mbenabled `
                                         -ImapEnabled $mbenabled `
                                         -EwsEnabled $mbenabled `
                                         -MAPIEnabled $mbenabled `
                                         -OWAEnabled $mbenabled `
                                         -PopEnabled $mbenabled `
                                         -OWAforDevicesEnabled $mbenabled
+                }
             }
+            
         }
         catch {
             $global:LastError =  "Unable to update Exchange Mailbox for ${username}: $_"
