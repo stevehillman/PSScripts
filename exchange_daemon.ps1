@@ -183,7 +183,7 @@ try {
                 $username = $Matches[1]
                 try 
                 {
-                    if ($username -Matches "^loc-" -or $username -Matches "^equip-")
+                    if ($username -Match "^loc-" -or $username -Match "^equip-")
                     {
                         $HideInGal = $false
                         $addresses = @($username)
