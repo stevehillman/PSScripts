@@ -53,7 +53,7 @@ function Write-Log($logmsg)
 }
 
 # Set up our UDP Socket ahead of time. It will never change
-# Don't wrap these in a 'try'. If host is invalid, we'll exit immediately.
+# Don't wrap these in a 'try'. If server name is invalid, we'll exit immediately.
 $UDPclient = new-object System.Net.Sockets.UdpClient; 
 $UDPclient.Connect($StatsdServer, $StatsdPort); 
 
@@ -111,12 +111,12 @@ $Stats.psobject.Properties | ForEach {
 
         $data.CounterSamples | ForEach {
             # Just in case we can't parse hostname from path, use local hostname as default
-            $host = $env:ComputerName
+            $servername = $env:ComputerName
 
             # This *should* always match
             if ($_.Path -Match "^\\\\([^\\]+)")
             {
-                $host = $Matches[1]
+                $servername = $Matches[1]
             }
 
             if ($multi)
@@ -127,12 +127,12 @@ $Stats.psobject.Properties | ForEach {
                     continue
                 }
                 # Add the value to the total
-                $hostdata.$host += $_.CookedValue
+                $hostdata.$servername += $_.CookedValue
 
-                # Add 1 to the number of stats collected for this host, in case we're averaging
+                # Add 1 to the number of stats collected for this servername, in case we're averaging
                 if ($_.CookedValue -ne 0 -or $collapse -eq "zeroaverage")
                 {
-                    $hostdatacnt.$host++
+                    $hostdatacnt.$servername++
                 }
             }
             else 
@@ -140,11 +140,11 @@ $Stats.psobject.Properties | ForEach {
                 if ($statpath -Match "\*")
                 {
                     $instance = $_.InstanceName -replace "[. (){}/\\:%]","_"
-                    $outstring = $Namespace + "." + $host + "." + $statname + "." + $instance + ":$($_.CookedValue)|$datatype"
+                    $outstring = $Namespace + "." + $servername + "." + $statname + "." + $instance + ":$($_.CookedValue)|$datatype"
                 }
                 else
                 {
-                    $outstring = $Namespace + "." + $host + "." + $statname + ":$($_.CookedValue)|$datatype")
+                    $outstring = $Namespace + "." + $servername + "." + $statname + ":$($_.CookedValue)|$datatype"
 
                 }
                 Write-Statsd($outstring)
@@ -158,7 +158,6 @@ $Stats.psobject.Properties | ForEach {
                     $hostdata.$_ = $hostdata.$_ / $hostdatacnt.$_
                 }
                 Write-Statsd($Namespace + "." + $_ + "." + ":$($hostdata.$_)|$datatype")
-                }
             }
         }
     }
