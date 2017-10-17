@@ -158,7 +158,7 @@ do
                     $outdata = $hostdata.$($_.Name)
                     if ($collapse -Match "average" -and $hostdatacnt.$($_.Name) -gt 0)
                     {
-                        $$outdata = $outdata / $hostdatacnt.$($_.Name)
+                        $outdata = $outdata / $hostdatacnt.$($_.Name)
                     }
                     Write-Statsd($Namespace + "." + $_.Name + "." + $statname + ":$outdata|$datatype")
                 }
