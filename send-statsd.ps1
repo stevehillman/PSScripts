@@ -1,7 +1,6 @@
-# Query Exchange and Windows performance counters
-# and send the results to a Statsd server
+# Query Windows performance counters and send the results to a Statsd server
 #
-# Stats to collect are specified in a JSON settings file.
+# Stats to collect are specified in a JSON settings file
 # as a hash of hashes. The key to the outer hash is the 
 # common name for the stat (this name will be sent to Statsd)
 # The inner hash has the following keys:
@@ -41,7 +40,7 @@ function load-settings($s_file)
     $settings = ConvertFrom-Json ((Get-Content $s_file) -join "")
     $global:StatsdServer = $settings.StatsdServer
     $global:StatsdPort = $settings.StatsdPort
-    $global:ExchangeServers = $settings.ExchangeServers
+    $global:Servers = $settings.Servers
     $global:Stats = $settings.Stats
     $global:Namespace = $settings.Namespace
     $global:Debug = ($settings.debug -eq "true")
@@ -84,84 +83,87 @@ load-settings($SettingsFile)
 # to complete, so if we have a *lot* of stats, this won't scale (or it'll
 # result in fairly infrequent updates to stats on the Statsd server)
 
-$Stats.psobject.Properties | ForEach {
-    $statname = $_.Name
-    $statpath = $Stats.$statname.Path
-    $collapse = $Stats.$statname.Collapse
-    $datatype = "g"
-    if ($Stats.$statname.Type -eq "c" -or $Stats.$statname.Type -eq "ms")
-    {
-        $datatype = $Stats.$statname.Type
-    }
-    $multi = $($statpath -Match "\*" -and $collapse -Match "[a-zA-Z]+")
+do
+{
+    $Stats.psobject.Properties | ForEach {
+        $statname = $_.Name
+        $statpath = $Stats.$statname.Path
+        $collapse = $Stats.$statname.Collapse
+        $datatype = "g"
+        if ($Stats.$statname.Type -eq "c" -or $Stats.$statname.Type -eq "ms")
+        {
+            $datatype = $Stats.$statname.Type
+        }
+        $multi = $($statpath -Match "\*" -and $collapse -Match "[a-zA-Z]+")
 
-    $sampleinterval = 1
-    if ($Stats.$statname.Interval -gt 1) 
-    {
-        $sampleinterval = $Stats.$statname.Interval
-    }
+        $sampleinterval = 1
+        if ($Stats.$statname.Interval -gt 1) 
+        {
+            $sampleinterval = $Stats.$statname.Interval
+        }
 
-    $hostdata = @{}
-    $hostdatacnt = @{}
-    $ExchangeServers | ForEach { $hostdatacnt.$_ = 0; $hostdata.$_ = 0 }
+        $hostdata = @{}
+        $hostdatacnt = @{}
+        $Servers | ForEach { $hostdatacnt.$_ = 0; $hostdata.$_ = 0 }
 
-    try {
-        # Collect the data
-        $data = Get-Counter -ComputerName $ExchangeServers -sampleinterval $sampleinterval $statpath
+        try {
+            # Collect the data
+            $data = Get-Counter -ComputerName $Servers -sampleinterval $sampleinterval $statpath
 
-        $data.CounterSamples | ForEach {
-            # Just in case we can't parse hostname from path, use local hostname as default
-            $servername = $env:ComputerName
+            $data.CounterSamples | ForEach {
+                # Just in case we can't parse hostname from path, use local hostname as default
+                $servername = $env:ComputerName
 
-            # This *should* always match
-            if ($_.Path -Match "^\\\\([^\\]+)")
-            {
-                $servername = $Matches[1]
+                # This *should* always match
+                if ($_.Path -Match "^\\\\([^\\]+)")
+                {
+                    $servername = $Matches[1]
+                }
+
+                if ($multi)
+                {
+                    # We're collapsing the values for all instances of a wildcard stat
+                    if ($_.InstanceName -eq "_total")
+                    {
+                        continue
+                    }
+                    # Add the value to the total
+                    $hostdata.$servername += $_.CookedValue
+
+                    # Add 1 to the number of stats collected for this servername, in case we're averaging
+                    if ($_.CookedValue -ne 0 -or $collapse -eq "zeroaverage")
+                    {
+                        $hostdatacnt.$servername++
+                    }
+                }
+                else 
+                {
+                    if ($statpath -Match "\*")
+                    {
+                        $instance = $_.InstanceName -replace "[. (){}/\\:%]","_"
+                        $outstring = $Namespace + "." + $servername + "." + $statname + "." + $instance + ":$($_.CookedValue)|$datatype"
+                    }
+                    else
+                    {
+                        $outstring = $Namespace + "." + $servername + "." + $statname + ":$($_.CookedValue)|$datatype"
+
+                    }
+                    Write-Statsd($outstring)
+                }
             }
-
             if ($multi)
             {
-                # We're collapsing the values for all instances of a wildcard stat
-                if ($_.InstanceName -eq "_total")
-                {
-                    continue
+                $hostdata.GetEnumerator() | ForEach {
+                    if ($collapse -Match "average" -and $hostdatacnt.$($_.Name) -gt 0)
+                    {
+                        $hostdata.$($_.Name) = $hostdata.$($_.Name) / $hostdatacnt.$($_.Name)
+                    }
+                    Write-Statsd($Namespace + "." + $_.Name + "." + ":$($hostdata.$($_.Name))|$datatype")
                 }
-                # Add the value to the total
-                $hostdata.$servername += $_.CookedValue
-
-                # Add 1 to the number of stats collected for this servername, in case we're averaging
-                if ($_.CookedValue -ne 0 -or $collapse -eq "zeroaverage")
-                {
-                    $hostdatacnt.$servername++
-                }
-            }
-            else 
-            {
-                if ($statpath -Match "\*")
-                {
-                    $instance = $_.InstanceName -replace "[. (){}/\\:%]","_"
-                    $outstring = $Namespace + "." + $servername + "." + $statname + "." + $instance + ":$($_.CookedValue)|$datatype"
-                }
-                else
-                {
-                    $outstring = $Namespace + "." + $servername + "." + $statname + ":$($_.CookedValue)|$datatype"
-
-                }
-                Write-Statsd($outstring)
             }
         }
-        if ($multi)
-        {
-            $hostdata | ForEach {
-                if ($collapse -Match "average" -and $hostdatacnt.$_ -gt 0)
-                {
-                    $hostdata.$_ = $hostdata.$_ / $hostdatacnt.$_
-                }
-                Write-Statsd($Namespace + "." + $_ + "." + ":$($hostdata.$_)|$datatype")
-            }
+        catch {
+            Write-Log $_
         }
     }
-    catch {
-        Write-Log $_
-    }
-}
+} while (-Not $debug)
