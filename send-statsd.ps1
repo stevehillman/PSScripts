@@ -16,6 +16,9 @@
 #               If this parameter is left out, each instance will be sent as a separate
 #               stat, with the instance name appended to the stat's common name. If any
 #               stat is named "_total", it'll be omitted from sum or average
+# - InstanceExclude: Array of instance names to exclude if Path contains a wildcard.
+#               Anything matching any element in this array will neither be sent to Statsd
+#               nor included in sum/average totals
 #
 # Example:
 # "Stats": {
@@ -89,6 +92,7 @@ do
         $statname = $_.Name
         $statpath = $Stats.$statname.Path
         $collapse = $Stats.$statname.Collapse
+        $excludes = $Stats.$statname.InstanceExcludes
         $datatype = "g"
         if ($Stats.$statname.Type -eq "c" -or $Stats.$statname.Type -eq "ms")
         {
@@ -123,7 +127,7 @@ do
                 if ($multi)
                 {
                     # We're collapsing the values for all instances of a wildcard stat
-                    if ($_.InstanceName -eq "_total")
+                    if ($_.InstanceName -eq "_total" -or $excludes -contains $_.InstanceName)
                     {
                         # Skip to the next stat in the ForEach loop
                         return
@@ -141,6 +145,11 @@ do
                 {
                     if ($statpath -Match "\*")
                     {
+                        if ($excludes -contains $_.InstanceName)
+                        {
+                            # Skip to the next stat in the ForEach loop
+                            return
+                        }
                         $instance = $_.InstanceName -replace "[. (){}/\\:%]","_"
                         $outstring = $Namespace + "." + $servername + "." + $statname + "." + $instance + ":$($_.CookedValue)|$datatype"
                     }
