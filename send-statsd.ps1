@@ -92,7 +92,7 @@ do
         $statname = $_.Name
         $statpath = $Stats.$statname.Path
         $collapse = $Stats.$statname.Collapse
-        $excludes = $Stats.$statname.InstanceExcludes
+        $excludes = $Stats.$statname.ExcludeInstances
         $datatype = "g"
         if ($Stats.$statname.Type -eq "c" -or $Stats.$statname.Type -eq "ms")
         {
