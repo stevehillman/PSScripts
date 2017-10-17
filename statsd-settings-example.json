@@ -1,0 +1,52 @@
+{
+  "StatsdServer": "stats.contoso.com",
+  "StatsdPort": "8125",
+  "Namespace": "exchange",
+  "Servers": [
+	  "exsv1-tst",
+	  "exsv2-tst",
+	  "exsv3-tst",
+	  "exsv4-tst"
+	],
+  "Stats": {
+     "Disk_Free_pct": {
+       "Path": "\\LogicalDisk(*)\\% Free Space",
+       "ExcludeInstances": [
+		"_total"
+		]
+     },
+     "HTTP_Proxy_Reqs": {
+       "Path": "\\MSExchange HttpProxy(*)\\Proxy Requests/Sec",
+       "Collapse": "sum"   
+     },
+     "CPU_Usage": {
+       "Path": "\\Processor(_Total)\\% Processor Time" 
+     },
+     "LDAP_Read_ms": {
+       "Path": "\\MSExchange ADAccess Domain Controllers(*)\\LDAP Read Time"
+     },
+     "LDAP_Search_ms": {
+       "Path": "\\MSExchange ADAccess Domain Controllers(*)\\LDAP Search Time"
+     },
+     "Memory_Free_MB": {
+       "Path": "\\Memory\\Available Mbytes"
+     },
+     "HTTP_Reqs": {
+       "Path": "\\MSExchange HttpProxy(*)\\Requests/Sec",
+       "Collapse": "sum"
+     },
+     "ActiveSync_Reqs": {
+       "Path": "\\MSExchange ActiveSync\\Requests/sec"
+     },
+     "OWA_Reqs": {
+       "Path": "\\MSExchange OWA\\Requests/sec"
+     },
+     "EWS_Reqs": {
+       "Path": "\\MSExchangeWS\\Requests/sec"
+     },
+     "Web_Open_Conns": {
+       "Path": "\\Web Service(_Total)\\Current Connections"
+     }
+  },
+  "Debug": "true"
+}
