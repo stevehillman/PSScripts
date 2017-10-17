@@ -125,7 +125,8 @@ do
                     # We're collapsing the values for all instances of a wildcard stat
                     if ($_.InstanceName -eq "_total")
                     {
-                        continue
+                        # Skip to the next stat in the ForEach loop
+                        return
                     }
                     # Add the value to the total
                     $hostdata.$servername += $_.CookedValue
