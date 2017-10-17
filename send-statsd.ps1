@@ -155,11 +155,12 @@ do
             if ($multi)
             {
                 $hostdata.GetEnumerator() | ForEach {
+                    $outdata = $hostdata.$($_.Name)
                     if ($collapse -Match "average" -and $hostdatacnt.$($_.Name) -gt 0)
                     {
-                        $hostdata.$($_.Name) = $hostdata.$($_.Name) / $hostdatacnt.$($_.Name)
+                        $$outdata = $outdata / $hostdatacnt.$($_.Name)
                     }
-                    Write-Statsd($Namespace + "." + $_.Name + "." + $statname + ":$($hostdata.$($_.Name))|$datatype")
+                    Write-Statsd($Namespace + "." + $_.Name + "." + $statname + ":$outdata|$datatype")
                 }
             }
         }
