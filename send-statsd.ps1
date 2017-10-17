@@ -158,7 +158,7 @@ do
                     {
                         $hostdata.$($_.Name) = $hostdata.$($_.Name) / $hostdatacnt.$($_.Name)
                     }
-                    Write-Statsd($Namespace + "." + $_.Name + "." + $statname ":$($hostdata.$($_.Name))|$datatype")
+                    Write-Statsd($Namespace + "." + $_.Name + "." + $statname + ":$($hostdata.$($_.Name))|$datatype")
                 }
             }
         }
