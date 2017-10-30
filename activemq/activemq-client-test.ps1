@@ -86,6 +86,10 @@ function process-amaint-message($xmlmsg)
     }
 
     # Skip users not on Exchange yet. Remove this check when all users are on.
+    # The AddNewUsers and PassiveMode mode settings are read from the Settings file
+    # If AddNewUsers is True, process *new user additions* to Exchange -- add them as long as they don't already exist
+    # If PassiveMode is True, process all user updates from Amaint but don't actually make changes. 
+    # If either flag is true, we don't need to query the maillist membership because we're processing everyone.
     if (!$AddNewUsers -and !$PassiveMode)
     {
         try {
