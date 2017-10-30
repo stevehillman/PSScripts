@@ -70,6 +70,12 @@ function process-amaint-message($xmlmsg)
     $mbenabled = $true
     if ($xmlmsg.syncLogin.login.isLightweight -eq "true" -or $xmlmsg.syncLogin.login.status -ne "active")
     {
+        # Special case - ignore 'pending create' status (any others to ignore?)
+        if ($xmlmsg.synclogin.login.status -eq "pending create")
+        {
+            Write-Log "Skipping Pending Create status msg"
+            return 1
+        }
         $mbenabled = $false
         # TODO: Revisit how accounts get disabled. For now: 
         #  - prevent logins by disabling all protocols for account
