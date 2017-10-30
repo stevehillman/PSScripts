@@ -143,9 +143,11 @@ function process-amaint-message($xmlmsg)
         {
             Write-Log "PassiveMode: Enable-Mailbox -Identity $username"
             # Simulate what a get-mailbox call would return
-            $mb.EmailAddresses = @("$($username)@sfu.ca")
-            $mb.HiddenFromAddressListsEnabled = $true
-            $casmb.OWAEnabled = $true
+            $mb = New-Object -TypeName PSObject
+            Add-Member -InputObject $mb EmailAddresses @("$($username)@sfu.ca")
+            Add-Member -InputObject $mb HiddenFromAddressListsEnabled $true
+            $casmb = New-Object -TypeName PSObject
+            Add-Member -InputObject $casmb OWAEnabled $true
         }
         else 
         {
