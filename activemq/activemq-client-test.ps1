@@ -119,8 +119,8 @@ function process-amaint-message($xmlmsg)
     $update = $false
     # See if the user already has an Exchange Mailbox
     try {
-        $mb = Get-Mailbox $username
-        $casmb = Get-CASMailbox $username
+        $mb = Get-Mailbox $username -ErrorAction Stop
+        $casmb = Get-CASMailbox $username -ErrorAction Stop
     }
     catch {
         # It's possible that other errors could trigger a failure here but we'll deal with that below
@@ -150,7 +150,7 @@ function process-amaint-message($xmlmsg)
         else 
         {
             try {
-                Enable-Mailbox -Identity $username
+                Enable-Mailbox -Identity $username -ErrorAction Stop
                 $mb = Get-Mailbox $username
             }
             catch {
@@ -246,8 +246,9 @@ function process-amaint-message($xmlmsg)
                 Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal `
                             -EmailAddressPolicyEnabled $false `
                             -EmailAddresses $addresses `
-                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
-                Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
+                            -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
+                            -ErrorAction Stop
+                Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
                 Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
             }
 
@@ -260,14 +261,15 @@ function process-amaint-message($xmlmsg)
                 else 
                 {    
                     Write-Log "Setting Account-Enabled state to $mbenabled"
-                    Set-Mailbox -Identity $username -PrimarySmtpAddress $primaryemail
+                    Set-Mailbox -Identity $username -PrimarySmtpAddress $primaryemail -ErrorAction Stop
                     Set-CASMailbox $username -ActiveSyncEnabled $mbenabled `
                                         -ImapEnabled $mbenabled `
                                         -EwsEnabled $mbenabled `
                                         -MAPIEnabled $mbenabled `
                                         -OWAEnabled $mbenabled `
                                         -PopEnabled $mbenabled `
-                                        -OWAforDevicesEnabled $mbenabled
+                                        -OWAforDevicesEnabled $mbenabled `
+                                        -ErrorAction Stop
                 }
             }
             
