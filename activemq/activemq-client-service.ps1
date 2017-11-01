@@ -240,11 +240,6 @@ Function Log () {
   $string | Out-File -Encoding ASCII -Append "$logFile"
 }
 
-function Write-Log($logmsg)
-{
-    Log $logmsg
-}
-
 #-----------------------------------------------------------------------------#
 #                                                                             #
 #   Function        Start-PSThread                                            #
@@ -556,7 +551,10 @@ Function Receive-PipeHandlerThread () {
   Receive-PSThread -PSThread $pipeThread -AutoRemove
 }
 
-## Local private functions ##
+#### End of PSService functions.
+
+
+## Local SFU private functions ##
 
 function load-settings($s_file)
 {
@@ -578,11 +576,12 @@ function load-settings($s_file)
     $global:SmtpServer = $settings.SmtpServer
     $global:AddNewUsers = ($settings.AddNewUsers -eq "true")
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
+    $global:SubDomains = $settings.SubDomains
 }
 
 function Write-Log($logmsg)
 {
-    Add-Content $LogFile "$(date) : $logmsg"
+    Log $logmsg
 }
 
 function process-message($xmlmsg)
@@ -839,6 +838,7 @@ function process-amaint-message($xmlmsg)
 }
 
 
+
 # Queue a message in the retry queue to retry it later.
 # We reformat the XML - wrap it in a "retryMessage" tag and
 # add a retry count tag.
@@ -1049,8 +1049,9 @@ $source = @"
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $userName = $identity.Name      # Ex: "NT AUTHORITY\SYSTEM" or "Domain\Administrator"
 $authority,$name = $username -split "\\"
-$isSystem = $identity.IsSystem	# Do not test ($userName -eq "NT AUTHORITY\SYSTEM"), as this fails in non-English systems.
-# Log "# `$userName = `"$userName`" ; `$isSystem = $isSystem"
+#$isSystem = $identity.IsSystem	# Do not test ($userName -eq "NT AUTHORITY\SYSTEM"), as this fails in non-English systems.
+$isSystem = ($username -Match "EXCH Taskman")  # We use the 'exch taskman' account for services in Exchange.
+Log "# `$userName = `"$userName`" ; `$isSystem = $isSystem"
 
 if ($Setup) {Log ""}    # Insert one blank line to separate test sessions logs
 Log $MyInvocation.Line # The exact command line that was used to start us
