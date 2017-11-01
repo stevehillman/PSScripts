@@ -36,6 +36,7 @@ function load-settings($s_file)
     $global:SmtpServer = $settings.SmtpServer
     $global:AddNewUsers = ($settings.AddNewUsers -eq "true")
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
+    $global:SubDomains = $settings.SubDomains
 }
 
 function Write-Log($logmsg)
