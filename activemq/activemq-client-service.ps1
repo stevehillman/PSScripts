@@ -360,11 +360,13 @@ Function Receive-PSThread () {
       Unregister-Event -SourceIdentifier $PSThread.Name
       Get-Event -SourceIdentifier $PSThread.Name | Remove-Event # Flush remaining events
     }
+    Log "got here in Receive-PSThread"
     try {
       $PSThread.PSPipeline.EndInvoke($PSThread.Handle) # Output the thread pipeline output
     } catch {
       $_ # Output the thread pipeline error
     }
+    Log "got here2 in Receive-PSThread"
     if ($AutoRemove) {
       $PSThread.RunSpace.Close()
       $PSThread.PSPipeline.Dispose()
@@ -611,10 +613,10 @@ function process-amaint-message($xmlmsg)
     $mbenabled = $true
     if ($xmlmsg.syncLogin.login.isLightweight -eq "true" -or $xmlmsg.syncLogin.login.status -ne "active")
     {
-        # Special case - ignore 'pending create' status (any others to ignore?)
-        if ($xmlmsg.synclogin.login.status -eq "pending create")
+        # Special case - ignore 'pending create' or 'Defined' status (any others to ignore?)
+        if ($xmlmsg.synclogin.login.status -eq "pending create" -or $xmlmsg.synclogin.login.status -eq "defined")
         {
-            Write-Log "Skipping Pending Create status msg"
+            Write-Log "Skipping Pending Create or Defined status msg"
             return 1
         }
         $mbenabled = $false
@@ -1411,6 +1413,7 @@ if ($Service) {                 # Run the service
     Remove-ActiveMQSession $AMQSession
     # Terminate the control pipe handler thread
     Get-PSThread | Remove-PSThread # Remove all remaining threads
+    Log "Got here in cleanup"
     # Flush all leftover events (There may be some that arrived after we exited the while event loop, but before we unregistered the events)
     $events = Get-Event | Remove-Event
     # Log a termination event, no matter what the cause is.
