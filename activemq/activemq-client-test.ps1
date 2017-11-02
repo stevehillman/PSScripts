@@ -71,10 +71,10 @@ function process-amaint-message($xmlmsg)
     $mbenabled = $true
     if ($xmlmsg.syncLogin.login.isLightweight -eq "true" -or $xmlmsg.syncLogin.login.status -ne "active")
     {
-        # Special case - ignore 'pending create' status (any others to ignore?)
-        if ($xmlmsg.synclogin.login.status -eq "pending create")
+        # Special case - ignore 'pending create' or 'defined' status (any others to ignore?)
+        if ($xmlmsg.synclogin.login.status -eq "pending create" -or $xmlmsg.synclogin.login.status -eq "defined")
         {
-            Write-Log "Skipping Pending Create status msg"
+            Write-Log "Skipping Pending Create or Defined status msg"
             return 1
         }
         $mbenabled = $false
@@ -193,6 +193,24 @@ function process-amaint-message($xmlmsg)
         $update=$true
     }
 
+    $aliasdomains = @("sfu.ca")
+
+    # Handle special case where user is in a subdomain they want to 
+    # use in their From address (e.g. @cs.sfu.ca). 
+    #   - ActiveMQ msg includes AD groups that user is a member of
+    #   - settings.json file contains a hash of AD groups and their corresponding subdomain
+    # so if a user is in an AD group that has a subdomain entry, add their email address with
+    # the subdomain to the list of Exchange aliases. 
+
+    $adGroups = @($xmlmsg.synclogin.login.adGroups)
+    $subDomains.psobject.Properties | ForEach {
+        if ($adGroups -Contains $_.Name)
+        {
+            $group = $_.Name
+            $aliasdomains += $subDomains.$group
+        }
+    }
+
     # Check if the account needs updating
     if (! $update)
     {
@@ -205,11 +223,11 @@ function process-amaint-message($xmlmsg)
         $x = 0
         foreach ($alias in $al_tmp)
         {
-            # Strip Exchange prefix and domain suffix
+            # Strip Exchange prefix and domain suffixes
             $a = $alias  -replace ".*:" -replace "@.*"
-            if ($a -ne $username)
+            if ($a -ne $username -and $aliases -notcontains $a)
             {
-                # Only add aliases that aren't the user's computing ID
+                # Only add aliases once and that aren't the user's computing ID
                 $aliases += $a
             }
         }   
@@ -238,15 +256,19 @@ function process-amaint-message($xmlmsg)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
         $addresses = @($username) + @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
+        $scopedaddresses = @()
         if ($mbenabled)
         {
             $primaryemail = $username + "@sfu.ca"
-            $addresses = $addresses | % { $_ + "@sfu.ca"}
+            ForEach ($domain in $aliasdomains)
+            {
+                $scopedaddresses += $addresses | % { $_ + $domain}
+            }
         }
         else 
         {
             $primaryemail = $username + "_disabled@sfu.ca"
-            $addresses = $addresses | % { $_ + "_disabled@sfu.ca"}
+            $scopedaddresses = $addresses | % { $_ + "_disabled@sfu.ca"}
         }
 
         try {
