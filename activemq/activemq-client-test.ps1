@@ -256,13 +256,13 @@ function process-amaint-message($xmlmsg)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
         $addresses = @($username) + @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
-        $scopedaddresses = @()
+        $ScopedAddresses = @()
         if ($mbenabled)
         {
             $primaryemail = $username + "@sfu.ca"
             ForEach ($domain in $aliasdomains)
             {
-                $scopedaddresses += $addresses | % { $_ + $domain}
+                $ScopedAddresses += $addresses | % { $_ + $domain}
             }
         }
         else 
@@ -274,13 +274,13 @@ function process-amaint-message($xmlmsg)
         try {
             if ($PassiveMode)
             {
-                Write-Log "PassiveMode: Set-Mailbox -Identity $username -HideInGal $hideInGal -EmailAddresses $addresses"
+                Write-Log "PassiveMode: Set-Mailbox -Identity $username -HideInGal $hideInGal -EmailAddresses $ScopedAddresses"
             }
             else 
             {
                 Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal `
                             -EmailAddressPolicyEnabled $false `
-                            -EmailAddresses $addresses `
+                            -EmailAddresses $ScopedAddresses `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
