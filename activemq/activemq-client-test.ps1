@@ -202,7 +202,7 @@ function process-amaint-message($xmlmsg)
     # so if a user is in an AD group that has a subdomain entry, add their email address with
     # the subdomain to the list of Exchange aliases. 
 
-    $adGroups = @($xmlmsg.synclogin.login.adGroups)
+    $adGroups = @($xmlmsg.synclogin.login.adGroups.ChildNodes.InnerText)
     $subDomains.psobject.Properties | ForEach {
         if ($adGroups -Contains $_.Name)
         {
@@ -262,7 +262,7 @@ function process-amaint-message($xmlmsg)
             $primaryemail = $username + "@sfu.ca"
             ForEach ($domain in $aliasdomains)
             {
-                $ScopedAddresses += $addresses | % { $_ + $domain}
+                $ScopedAddresses += $addresses | % { $_ + "@" + $domain}
             }
         }
         else 
