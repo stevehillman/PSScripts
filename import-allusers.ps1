@@ -22,9 +22,6 @@ $me = $env:username
 $SettingsFile = "C:\Users\$me\settings.json"
 $LogFile = "C:\Users\$me\User-Import.log"
 
-$ExchangeServer = "http://its-exsv1-tst.exchtest.sfu.ca"
-$OU = "OU=SFUUsers,DC=Exchtest,DC=sfu,DC=ca"
-
 # Ensure that Exchange cmdlets throw catchable errors when they fail
 $ErrorActionPreference = "Stop"
 
