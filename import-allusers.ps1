@@ -107,7 +107,7 @@ foreach ($u in $users)
 
     $create = $false
     try {
-        $mb = Get-Mailbox $u.SamAccountName
+        $mb = Get-Mailbox $u.SamAccountName -ErrorAction Stop
     }
     catch {
         $create = $true
@@ -116,12 +116,13 @@ foreach ($u in $users)
     if ($create)
     {
         try {
-            Enable-Mailbox -Identity $u.SamAccountName
+            Enable-Mailbox -Identity $u.SamAccountName -ErrorAction Stop
             Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true `
                         -EmailAddressPolicyEnabled $false `
                         -EmailAddresses "$($u.SamAccountName)_not_migrated@sfu.ca" `
-                        -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update
-            Set-MailboxMessageConfiguration $u.SamAccountName -IsReplyAllTheDefaultResponse $false
+                        -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
+                        -ErrorAction Stop
+            Set-MailboxMessageConfiguration $u.SamAccountName -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
             Write-Log "Created mailbox for $($u.SamAccountName)"
         }
         catch
