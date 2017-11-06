@@ -284,7 +284,7 @@ function process-amaint-message($xmlmsg)
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
                 Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
-                Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $addresses"
+                Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $ScopedAddresses"
             }
 
             if ($mbenabled -ne $casmb.OWAEnabled)
