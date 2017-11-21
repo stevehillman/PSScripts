@@ -201,12 +201,12 @@ foreach ($u in $users)
                     }
                 }
                 catch {
-                    Write-Host "Error. Unable to update quota for $($u.SamAccountName). $_"
+                    Write-Log "Error. Unable to update quota for $($u.SamAccountName). $_"
                 }
             }
         }
     }
     else {
-        Write-Host "WARNING: No quota found for $($u.SamAccountName)"
+        Write-Log "WARNING: No quota found for $($u.SamAccountName)"
     }
 }
