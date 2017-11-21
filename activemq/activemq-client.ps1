@@ -255,20 +255,43 @@ function process-amaint-message($xmlmsg)
     if ($update)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
-        $addresses = @($username) + @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
+        $PreferredEmail = $xmlmsg.synclogin.person.email
+        if ($PreferredEmail -Notmatch "@.*sfu.ca")
+        {
+            # For that rare case when a user has specified a non-SFU PreferredEmail address in SFUDS
+            $PreferredEmail = $username + "@sfu.ca"
+        }
+
+        $addresses = @($PreferredEmail) + @($username) + @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
+        # $addresses will contain duplicates because PreferredEmail is always going to be one of the aliases or the username
+        # We'll deal with that below
+
         $ScopedAddresses = @()
         if ($mbenabled)
         {
-            $primaryemail = $username + "@sfu.ca"
-            ForEach ($domain in $aliasdomains)
+            $primaryemail = $PreferredEmail
+            $addresses | ForEach
             {
-                $ScopedAddresses += $addresses | % { $_ + "@" + $domain}
+                if ($_ -Notmatch "@")
+                {
+                    $Scopedaddr = $_ + "@sfu.ca"
+                }
+                else 
+                {
+                    $Scopedaddr = $_
+                }
+                if ($ScopedAddresses -contains $Scopedaddr)
+                {
+                    # eliminate duplicates
+                    continue
+                }
+                $ScopedAddresses += $Scopedaddr
             }
         }
         else 
         {
             $primaryemail = $username + "_disabled@sfu.ca"
-            $scopedaddresses = $addresses | % { $_ + "_disabled@sfu.ca"}
+            $scopedaddresses += primaryemail
         }
 
         try {
