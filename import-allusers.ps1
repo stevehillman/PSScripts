@@ -49,24 +49,30 @@ function load-settings($s_file)
     $mailboxes | % {
         $u = $_.mailbox
         $q = $_.quota
-        if ($q -Notmatch "GB")
+        if ($quotas.ContainsKey($u))
         {
-            # If the mailbox isn't at least in the Gigabyte range, just set the qutoa use to 0
-            $quotas.add($u,"0")
+            Write-Host "Wut? $u is listed more than once! Skipping duplicate entry"
         }
-        elseif ($q -match "^(\d+)\.")
-        {
-            $size = $Matches[1]
-            if ($size -gt 4)
+        else {
+            if ($q -Notmatch "GB")
             {
-                # Our default quota is 5gb. If it's as big or bigger than that, 
-                # add 2gb and set the quotas accordingly
-                $size = $size + 2
+                # If the mailbox isn't at least in the Gigabyte range, just set the qutoa use to 0
+                $quotas.add($u,"0")
             }
-            else {
-                $size = 0
+            elseif ($q -match "^(\d+)\.")
+            {
+                $size = $Matches[1]
+                if ($size -gt 4)
+                {
+                    # Our default quota is 5gb. If it's as big or bigger than that, 
+                    # add 2gb and set the quotas accordingly
+                    $size = $size + 2
+                }
+                else {
+                    $size = 0
+                }
+                $quotas.add($u,$size)
             }
-            $quotas.add($u,$size)
         }
     }
 }
