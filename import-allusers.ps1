@@ -54,7 +54,7 @@ function load-settings($s_file)
             # If the mailbox isn't at least in the Gigabyte range, just set the qutoa use to 0
             $quotas.add($u,"0")
         }
-        else if ($q -match "^(\d+)\.")
+        elseif ($q -match "^(\d+)\.")
         {
             $size = $Matches[1]
             if ($size -gt 4)
