@@ -62,6 +62,8 @@ function load-settings($s_file)
             elseif ($q -match "^(\d+)\.")
             {
                 $size = $Matches[1]
+                # Powershell trick: divide by 1 to force to an Int
+                $size = $size/1
                 if ($size -gt 4)
                 {
                     # Our default quota is 5gb. If it's as big or bigger than that, 
@@ -180,10 +182,11 @@ foreach ($u in $users)
         }
     }
 
-    # Regardless if whether we created the account, see if the quota needs updating
+    # Regardless of whether we just created the account, see if the quota needs updating
     if ($quotas.ContainsKey($u.SamAccountName + "@sfu.ca"))
     {
         $size = $quotas.Get_Item($u.SamAccountName + "@sfu.ca")
+        $size = $size/1  # force to Int
         if ($size -gt 0)
         {
             if ($PassiveMode)
@@ -197,6 +200,7 @@ foreach ($u in $users)
                     if ($oldsize -match "(\d+) GB")
                     {
                         $oldsize = $Matches[1]
+                        $oldsize = $oldsize/1 # Force to Int
                     }
                     else {
                         $oldsize = 5
@@ -204,6 +208,7 @@ foreach ($u in $users)
                     if ($mb.UseDatabaseQuotaDefaults -or $oldsize -lt $size)
                     {
                         Set-Mailbox $u.SamAccountName -IssueWarningQuota ($size)gb -ProhibitSendQuota ($size+1)gb -ProhibitSendReceiveQuota ($size+2)gb -UseDatabaseQuotaDefaults $false -ErrorAction Stop
+                        Write-Log "Set quota on $($u.SamAccountName) to $($size+1)GB "
                     }
                 }
                 catch {
