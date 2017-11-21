@@ -138,7 +138,14 @@ foreach ($u in $users)
     
     # Fetch user info from REST
     # Are they lightweight or inactive? If so, 'continue': no need to create
-    $amuser = Get-AOBRestUser -Username $u.SamAccountName -AuthToken $RestToken
+    try {
+        $amuser = Get-AOBRestUser -Username $u.SamAccountName -AuthToken $RestToken
+    }
+    catch {
+        Write-Log "Error: Failed to contact RESTServer for $($u.SamAccountName). Skipping. $_"
+        Continue
+    }
+    
     if ($amuser.isLightweight -eq "true" -or $amuser.status -ne "active")
     {
         Write-Log "Skipping $($u.SamAccountName). Lightweight or Inactive"
