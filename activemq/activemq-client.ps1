@@ -36,7 +36,6 @@ function load-settings($s_file)
     $global:SmtpServer = $settings.SmtpServer
     $global:AddNewUsers = ($settings.AddNewUsers -eq "true")
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
-    $global:SubDomains = $settings.SubDomains
 }
 
 function Write-Log($logmsg)
@@ -193,24 +192,6 @@ function process-amaint-message($xmlmsg)
         $update=$true
     }
 
-    $aliasdomains = @("sfu.ca")
-
-    # Handle special case where user is in a subdomain they want to 
-    # use in their From address (e.g. @cs.sfu.ca). 
-    #   - ActiveMQ msg includes AD groups that user is a member of
-    #   - settings.json file contains a hash of AD groups and their corresponding subdomain
-    # so if a user is in an AD group that has a subdomain entry, add their email address with
-    # the subdomain to the list of Exchange aliases. 
-
-    $adGroups = @($xmlmsg.synclogin.login.adGroups.ChildNodes.InnerText)
-    $subDomains.psobject.Properties | ForEach {
-        if ($adGroups -Contains $_.Name)
-        {
-            $group = $_.Name
-            $aliasdomains += $subDomains.$group
-        }
-    }
-
     # Check if the account needs updating
     if (! $update)
     {
@@ -270,8 +251,7 @@ function process-amaint-message($xmlmsg)
         if ($mbenabled)
         {
             $primaryemail = $PreferredEmail
-            $addresses | ForEach
-            {
+            $addresses | ForEach {
                 if ($_ -Notmatch "@")
                 {
                     $Scopedaddr = $_ + "@sfu.ca"
