@@ -251,14 +251,14 @@ function process-amaint-message($xmlmsg)
         if ($mbenabled)
         {
             $primaryemail = $PreferredEmail
-            $addresses | ForEach {
-                if ($_ -Notmatch "@")
+            ForEach ($addr in $addresses) {
+                if ($addr -Notmatch "@")
                 {
-                    $Scopedaddr = $_ + "@sfu.ca"
+                    $Scopedaddr = $addr + "@sfu.ca"
                 }
                 else 
                 {
-                    $Scopedaddr = $_
+                    $Scopedaddr = $addr
                 }
                 if ($ScopedAddresses -contains $Scopedaddr)
                 {
