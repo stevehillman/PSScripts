@@ -36,6 +36,7 @@ function load-settings($s_file)
     $global:SmtpServer = $settings.SmtpServer
     $global:AddNewUsers = ($settings.AddNewUsers -eq "true")
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
+    $global:SubDomains = $settings.SubDomains
 }
 
 function Write-Log($logmsg)
@@ -127,10 +128,11 @@ function process-amaint-message($xmlmsg)
 
     $create = $false
     $update = $false
+    $scopedusername = $username + "@sfu.ca"
     # See if the user already has an Exchange Mailbox
     try {
-        $mb = Get-Mailbox $username -ErrorAction Stop
-        $casmb = Get-CASMailbox $username -ErrorAction Stop
+        $mb = Get-Mailbox $scopedusername -ErrorAction Stop
+        $casmb = Get-CASMailbox $scopedusername -ErrorAction Stop
     }
     catch {
         # It's possible that other errors could trigger a failure here but we'll deal with that below
@@ -162,8 +164,8 @@ function process-amaint-message($xmlmsg)
         else 
         {
             try {
-                Enable-Mailbox -Identity $username -ErrorAction Stop
-                $mb = Get-Mailbox $username
+                Enable-Mailbox -Identity $scopedusername -ErrorAction Stop
+                $mb = Get-Mailbox $scopedusername -ErrorAction Stop
             }
             catch {
                 # Now we have a problem. Throw an error and abort for this user
@@ -192,10 +194,13 @@ function process-amaint-message($xmlmsg)
         $update=$true
     }
 
+    # Save for later comparisons
+    $PreferredEmail = $xmlmsg.synclogin.person.email
+
     # Check if the account needs updating
     if (! $update)
     {
-        # Check aliases
+        #### Check aliases ####
         # Get the list of aliases from Exchange
         $al_tmp = @($mb.EmailAddresses)
         # Create empty array to hold unscoped aliases
@@ -205,6 +210,10 @@ function process-amaint-message($xmlmsg)
         foreach ($alias in $al_tmp)
         {
             # Strip Exchange prefix and domain suffixes
+            if ($alias -cmatch "SMTP")
+            {
+                $primaryaddress = $alias
+            }
             $a = $alias  -replace ".*:" -replace "@.*"
             if ($a -ne $username -and $aliases -notcontains $a)
             {
@@ -219,6 +228,16 @@ function process-amaint-message($xmlmsg)
             $update = $true
         }
 
+
+        #### Check Primary SMTP Address ####
+        if (!($primaryaddress -eq $PreferredEmail) -and $primaryaddress -Notmatch "_not_migrated")
+        {
+            # Primary SMTP address doesn't match, force update
+            Write-Log "$primaryaddress doesn't match $PreferredEmail. Updating"
+            $update = $true
+        }
+
+        #### Check GAL visibility ####
         if ($mb.HiddenFromAddressListsEnabled -ne $hideInGal)
         {
             Write-Log "HideInGal state changed. Updating"
@@ -236,16 +255,25 @@ function process-amaint-message($xmlmsg)
     if ($update)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
-        $PreferredEmail = $xmlmsg.synclogin.person.email
         if ($PreferredEmail -Notmatch "@.*sfu.ca")
         {
             # For that rare case when a user has specified a non-SFU PreferredEmail address in SFUDS
             $PreferredEmail = $username + "@sfu.ca"
         }
 
-        $addresses = @($PreferredEmail) + @($username) + @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
+        $addresses = @($username) + @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
         # $addresses will contain duplicates because PreferredEmail is always going to be one of the aliases or the username
         # We'll deal with that below
+
+        ## Security check - if PreferredEmail is an @*sfu.ca address, make sure its one of the user's own addresses
+        if ($PreferredEmail -match "@.*sfu.ca" -and $addresses -notcontains ($PreferredEmail -replace "@.*sfu.ca"))
+        {
+            Write-Log "WARNING: $scopedusername Preferred Email address $PreferredEmail is not one of the their aliases. Ignoring"
+            $PreferredEmail = $scopedusername
+        }
+
+        # Preferred address comes first in EmailAddresses list
+        $addresses = @($PreferredEmail) + $addresses
 
         $ScopedAddresses = @()
         if ($mbenabled)
@@ -277,17 +305,17 @@ function process-amaint-message($xmlmsg)
         try {
             if ($PassiveMode)
             {
-                Write-Log "PassiveMode: Set-Mailbox -Identity $username -HideInGal $hideInGal -EmailAddresses $ScopedAddresses"
+                Write-Log "PassiveMode: Set-Mailbox -Identity $scopedusername -HideInGal $hideInGal -EmailAddresses $ScopedAddresses"
             }
             else 
             {
-                Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $hideInGal `
+                Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $hideInGal `
                             -EmailAddressPolicyEnabled $false `
                             -EmailAddresses $ScopedAddresses `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
-                Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
-                Write-Log "Updated mailbox for ${username}. HideInGal: $hideInGal. Aliases: $ScopedAddresses"
+                Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+                Write-Log "Updated mailbox for ${scopedusername}. HideInGal: $hideInGal. Aliases: $ScopedAddresses"
             }
 
             if ($mbenabled -ne $casmb.OWAEnabled)
@@ -299,8 +327,8 @@ function process-amaint-message($xmlmsg)
                 else 
                 {    
                     Write-Log "Setting Account-Enabled state to $mbenabled"
-                    Set-Mailbox -Identity $username -PrimarySmtpAddress $primaryemail -ErrorAction Stop
-                    Set-CASMailbox $username -ActiveSyncEnabled $mbenabled `
+                    Set-Mailbox -Identity $scopedusername -PrimarySmtpAddress $primaryemail -ErrorAction Stop
+                    Set-CASMailbox $scopedusername -ActiveSyncEnabled $mbenabled `
                                         -ImapEnabled $mbenabled `
                                         -EwsEnabled $mbenabled `
                                         -MAPIEnabled $mbenabled `

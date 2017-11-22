@@ -115,7 +115,7 @@ try {
                 }
                 
             }
-            elseif ($line -Match "^$Token getuser ([a-z\-]+)")
+            elseif ($line -Match "^$Token getuser ([a-z\-@]+)")
             {
                 # Fetch a single user mailbox. Returns all attributes as a JSON hash
                 $Resp = Get-Mailbox $Matches[1] | ConvertTo-Json
@@ -181,6 +181,7 @@ try {
                 # set according to the account's role(s)
                 # If the mailbox doesn't yet exist, it'll be created, but this should very rarely happen
                 $username = $Matches[1]
+                $scopedusername = $username + "@sfu.ca"
                 try 
                 {
                     if ($username -Match "^loc-" -or $username -Match "^equip-")
@@ -191,7 +192,7 @@ try {
                     else 
                     {
                         # Verify the user is in AD. This will fail and be caught by the final 'catch' if the user doesn't exist
-                        $aduser = Get-ADUser $username
+                        $aduser = Get-ADUser $scopedusername
                     
 
                         # Fetch user info from REST
@@ -216,7 +217,7 @@ try {
 
                     $create = $false
                     try {
-                        $mb = Get-Mailbox $username
+                        $mb = Get-Mailbox $scopedusername -ErrorAction Stop
                     }
                     catch {
                         $create = $true
@@ -230,15 +231,15 @@ try {
                     {
                         if ($create)
                         {
-                            Enable-Mailbox -Identity $username
+                            Enable-Mailbox -Identity $scopedusername -ErrorAction Stop
                             Write-Log "Created mailbox for $($username)"
 
                         }
-                        Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $HideInGal `
+                        Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $HideInGal `
                                     -EmailAddressPolicyEnabled $false `
                                     -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
-                                    -EmailAddresses $addresses
-                        Set-MailboxMessageConfiguration $username -IsReplyAllTheDefaultResponse $false
+                                    -EmailAddresses $addresses -ErrorAction Stop
+                        Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
                         Write-Log "Enabled mailbox for $username"
                         $Resp = "ok. Mailbox enabled"
 
@@ -257,15 +258,16 @@ try {
                 # disable (make invisible) a user's mailbox. This will normally only ever be used 
                 # if there was a problem migrating a user and the 'enableuser' function needs to be backed out
                 $username = $Matches[1]
+                $scopedusername = $username + "@sfu.ca"
                 try 
                 {
                     # Make sure the mailbox for this user actually does exist
-                    $mb = Get-Mailbox $username
+                    $mb = Get-Mailbox $scopedusername -ErrorAction Stop
 
                     # Change alias and hide in GAL
-                    Set-Mailbox -Identity $username -HiddenFromAddressListsEnabled $true `
+                    Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $true `
                                 -EmailAddressPolicyEnabled $false `
-                                -EmailAddresses "SMTP:$($username)_not_migrated@sfu.ca"
+                                -EmailAddresses "SMTP:$($username)_not_migrated@sfu.ca" -ErrorAction Stop
                                 
                     $Resp = "ok. Mailbox disabled"
                 }
