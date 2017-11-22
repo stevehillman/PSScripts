@@ -161,8 +161,9 @@ foreach ($u in $users)
     # that DO exist in Exchange, disable them
 
     $create = $false
+    $userid = $u.SamAccountName+"@sfu.ca"
     try {
-        $mb = Get-Mailbox $u.SamAccountName -ErrorAction Stop
+        $mb = Get-Mailbox $userid -ErrorAction Stop
     }
     catch {
         $create = $true
@@ -176,13 +177,13 @@ foreach ($u in $users)
         }
         else {
             try {
-                $junk = Enable-Mailbox -Identity $u.SamAccountName -ErrorAction Stop
-                Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true `
+                $junk = Enable-Mailbox -Identity $userid -ErrorAction Stop
+                Set-Mailbox -Identity $userid -HiddenFromAddressListsEnabled $true `
                             -EmailAddressPolicyEnabled $false `
                             -EmailAddresses "$($u.SamAccountName)_not_migrated@sfu.ca" `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
-                Set-MailboxMessageConfiguration $u.SamAccountName -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+                Set-MailboxMessageConfiguration $userid -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
                 Write-Log "Created mailbox for $($u.SamAccountName)"
             }
             catch
@@ -205,7 +206,7 @@ foreach ($u in $users)
             }
             else {
                 try {
-                    $mb = Get-Mailbox $u.SamAccountName -ErrorAction Stop
+                    $mb = Get-Mailbox $userid -ErrorAction Stop
                     $oldsize = $mb.IssueWarningQuota
                     if ($oldsize -match "(\d+) GB")
                     {
@@ -217,7 +218,7 @@ foreach ($u in $users)
                     }
                     if ($mb.UseDatabaseQuotaDefaults -or $oldsize -lt $size)
                     {
-                        Set-Mailbox $u.SamAccountName -IssueWarningQuota ($size * $GB) -ProhibitSendQuota (($size+1)*$GB) -ProhibitSendReceiveQuota (($size+2)*$GB) -UseDatabaseQuotaDefaults $false -ErrorAction Stop
+                        Set-Mailbox $userid -IssueWarningQuota ($size * $GB) -ProhibitSendQuota (($size+1)*$GB) -ProhibitSendReceiveQuota (($size+2)*$GB) -UseDatabaseQuotaDefaults $false -ErrorAction Stop
                         Write-Log "Set quota on $($u.SamAccountName) to $($size+1)GB "
                     }
                 }
