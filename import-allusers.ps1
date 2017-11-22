@@ -106,7 +106,7 @@ try {
             $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos
         }
         # If the Import fails, it's probably just because the cmdlets have already been imported
-        import-pssession $ESession -ErrorAction Continue
+        import-pssession $ESession -AllowClobber
 }
 catch {
         write-host "Error connecting to Exchange Server: "
