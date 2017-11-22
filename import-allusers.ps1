@@ -26,6 +26,8 @@ $MailboxesFile = "C:\Users\$me\mailboxes.json"
 # Ensure that Exchange cmdlets throw catchable errors when they fail
 $ErrorActionPreference = "Stop"
 
+$GB=1024*1024*1024
+
 
 function load-settings($s_file)
 {
@@ -145,7 +147,7 @@ foreach ($u in $users)
         Write-Log "Error: Failed to contact RESTServer for $($u.SamAccountName). Skipping. $_"
         Continue
     }
-    
+
     if ($amuser.isLightweight -eq "true" -or $amuser.status -ne "active")
     {
         Write-Log "Skipping $($u.SamAccountName). Lightweight or Inactive"
@@ -214,7 +216,7 @@ foreach ($u in $users)
                     }
                     if ($mb.UseDatabaseQuotaDefaults -or $oldsize -lt $size)
                     {
-                        Set-Mailbox $u.SamAccountName -IssueWarningQuota ($size)gb -ProhibitSendQuota ($size+1)gb -ProhibitSendReceiveQuota ($size+2)gb -UseDatabaseQuotaDefaults $false -ErrorAction Stop
+                        Set-Mailbox $u.SamAccountName -IssueWarningQuota ($size * $GB) -ProhibitSendQuota (($size+1)*$GB) -ProhibitSendReceiveQuota (($size+2)*$GB) -UseDatabaseQuotaDefaults $false -ErrorAction Stop
                         Write-Log "Set quota on $($u.SamAccountName) to $($size+1)GB "
                     }
                 }
