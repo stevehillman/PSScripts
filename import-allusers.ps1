@@ -176,7 +176,7 @@ foreach ($u in $users)
         }
         else {
             try {
-                Enable-Mailbox -Identity $u.SamAccountName -ErrorAction Stop
+                $junk = Enable-Mailbox -Identity $u.SamAccountName -ErrorAction Stop
                 Set-Mailbox -Identity $u.SamAccountName -HiddenFromAddressListsEnabled $true `
                             -EmailAddressPolicyEnabled $false `
                             -EmailAddresses "$($u.SamAccountName)_not_migrated@sfu.ca" `
