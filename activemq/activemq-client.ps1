@@ -212,7 +212,7 @@ function process-amaint-message($xmlmsg)
             # Strip Exchange prefix and domain suffixes
             if ($alias -cmatch "SMTP")
             {
-                $primaryaddress = $alias
+                $primaryaddress = $alias -replace "SMTP:"
             }
             $a = $alias  -replace ".*:" -replace "@.*"
             if ($a -ne $username -and $aliases -notcontains $a)
