@@ -267,7 +267,7 @@ try {
                     # Change alias and hide in GAL
                     Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $true `
                                 -EmailAddressPolicyEnabled $false `
-                                -EmailAddresses "SMTP:$($username)_not_migrated@sfu.ca" -ErrorAction Stop
+                                -EmailAddresses "SMTP:$($username)+sfu_connect@sfu.ca" -ErrorAction Stop
                                 
                     $Resp = "ok. Mailbox disabled"
                 }

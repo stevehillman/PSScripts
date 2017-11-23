@@ -180,7 +180,7 @@ foreach ($u in $users)
                 $junk = Enable-Mailbox -Identity $userid -ErrorAction Stop
                 Set-Mailbox -Identity $userid -HiddenFromAddressListsEnabled $true `
                             -EmailAddressPolicyEnabled $false `
-                            -EmailAddresses "$($u.SamAccountName)_not_migrated@sfu.ca" `
+                            -EmailAddresses "$($u.SamAccountName)+sfu_connect@sfu.ca" `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
                 Set-MailboxMessageConfiguration $userid -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
