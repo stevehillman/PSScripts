@@ -230,7 +230,7 @@ function process-amaint-message($xmlmsg)
 
 
         #### Check Primary SMTP Address ####
-        if (!($primaryaddress -eq $PreferredEmail) -and $primaryaddress -Notmatch "+sfu_connect")
+        if (!($primaryaddress -eq $PreferredEmail) -and $primaryaddress -Notmatch "\+sfu_connect")
         {
             # Primary SMTP address doesn't match, force update
             Write-Log "$primaryaddress doesn't match $PreferredEmail. Updating"
@@ -245,7 +245,7 @@ function process-amaint-message($xmlmsg)
         }
     }
 
-    if ($AddNewUsers -and $mb.PrimarySmtpAddress -Match "+sfu_connect")
+    if ($AddNewUsers -and $mb.PrimarySmtpAddress -Match "\+sfu_connect")
     {
         # Once all new users go into Exchange, process every account EXCEPT accounts
         # that were imported from Zimbra but haven't been migrated yet
