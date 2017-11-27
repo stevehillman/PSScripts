@@ -184,6 +184,7 @@ foreach ($u in $users)
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
                 Set-MailboxMessageConfiguration $userid -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+                Set-CASMailbox $userid -ActiveSyncEnabled $false -ErrorAction Stop
                 Write-Log "Created mailbox for $($u.SamAccountName)"
             }
             catch
