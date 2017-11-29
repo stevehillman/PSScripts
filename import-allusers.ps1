@@ -66,11 +66,11 @@ function load-settings($s_file)
                 $size = $Matches[1]
                 # Powershell trick: divide by 1 to force to an Int
                 $size = $size/1
-                if ($size -gt 4)
+                if ($size -gt 2)
                 {
-                    # Our default quota is 5gb. If it's as big or bigger than that, 
-                    # add 2gb and set the quotas accordingly
-                    $size = $size + 2
+                    # Our default quota is 5gb. If it's as big or bigger than 3gb, 
+                    # double it and set the quotas accordingly
+                    $size = $size * 2
                 }
                 else {
                     $size = 0
