@@ -36,6 +36,7 @@ function load-settings($s_file)
     $global:ExchangeServer = $settings.ExchangeServer
     $global:RestToken = $settings.RestToken
     $global:UsersOU = $settings.UsersOU
+    $global:ResourcesOU = $settings.ResourcesOU
     $global:PassiveMode = ($settings.ImportPassiveMode -eq "true")
 
 }
@@ -111,25 +112,23 @@ foreach ($u in $users)
         }
         if ($PassiveMode)
         {
-            Write-Log "PassiveMode: New-mailbox -UserPrincipalName $scopedacct -Displayname $($u.displayname) -$($type)"
+            Write-Log "PassiveMode: New-mailbox -UserPrincipalName $scopedacct -OrganizationalUnit $ResourcesOU -name $($u.displayname) -$($type)"
         }
         else {
             try {
                 if ($type -eq "Room")
                 {
-                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Displayname $($u.displayname) -Room -ErrorAction Stop
+                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $scopedacct -Name $($u.displayname) -OrganizationalUnit $ResourcesOU -Room -ErrorAction Stop
                 }
-                else {
-                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Displayname $($u.displayname) -Equipment -ErrorAction Stop
-
+                else 
+                {
+                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $scopedacct -Name $($u.displayname) -OrganizationalUnit $ResourcesOU -Equipment -ErrorAction Stop
                 }
                 Set-Mailbox -Identity $scopedacct -HiddenFromAddressListsEnabled $true `
                             -EmailAddressPolicyEnabled $false `
                             -EmailAddresses "$($acct)+sfu_connect@sfu.ca" `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
-                Set-MailboxMessageConfiguration $userid -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
-                Set-CASMailbox $userid -ActiveSyncEnabled $false -ErrorAction Stop
                 Write-Log "Created mailbox for $scopedacct"
             }
             catch
@@ -140,5 +139,32 @@ foreach ($u in $users)
     }
 
     # Regardless of whether we just created the account, see if the permissions need updating
-   TO DO
+    $owner = $u.owner
+    if ($owner -notmatch "@sfu.ca")
+    {
+        $owner += "@sfu.ca"
+    }
+    try {
+        $mb = Get-Mailbox $owner
+    }
+    catch {
+        Write-Log "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
+        Write-Host "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
+        Continue
+    }
+    if ($PassiveMode)
+    {
+        Write-Log "PassiveMode: Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All"
+    }
+    else 
+    {
+        try 
+        {
+            Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
+        }
+        catch 
+        {
+            Write-Log "There was a problem granting $owner access to $scopedacct : $_"
+        }    
+    }
 }
