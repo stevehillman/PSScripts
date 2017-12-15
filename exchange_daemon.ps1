@@ -192,7 +192,7 @@ try {
                     else 
                     {
                         # Verify the user is in AD. This will fail and be caught by the final 'catch' if the user doesn't exist
-                        $aduser = Get-ADUser $scopedusername
+                        $aduser = Get-ADUser $username
                     
 
                         # Fetch user info from REST
