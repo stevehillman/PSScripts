@@ -124,7 +124,7 @@ try {
             elseif ($line -Match "^$Token getqueue")
             {
                 # Return all Exchange server queues as a JSON blob
-                $Resp = Get-ExchangeServer | Get-Queue | ConvertTo-Json
+                $Resp = Get-ExchangeServer | % { Get-Queue "$($_.Name)\*" } | ConvertTo-Json
             }
 
             elseif ($line -Match "^$Token new(user|room|equipment) (.+)")
