@@ -126,6 +126,12 @@ try {
                 # Return all Exchange server queues as a JSON blob
                 $Resp = Get-ExchangeServer | % { Get-Queue "$($_.Name)\*" } | ConvertTo-Json
             }
+            elseif ($line -Match "^$Token getdatabases")
+            {
+                # Return summary of Exchange databases. Currently only looks at which
+                # server each is on.
+                $Resp = Get-MailboxDatabase | Select -Property Name,Server,Servers | ConvertTo-Json
+            }
 
             elseif ($line -Match "^$Token new(user|room|equipment) (.+)")
             {
