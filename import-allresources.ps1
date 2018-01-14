@@ -138,6 +138,10 @@ foreach ($u in $users)
         }
     }
 
+    $AllowConflicts = ($u.autodeclineifbusy -eq "false")
+
+    run set-calendarresourceblahblah command here.
+
     # Regardless of whether we just created the account, see if the permissions need updating
     $owner = $u.owner
     if ($owner -notmatch "@sfu.ca")
