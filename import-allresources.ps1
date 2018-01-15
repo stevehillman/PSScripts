@@ -112,17 +112,18 @@ foreach ($u in $users)
         }
         if ($PassiveMode)
         {
-            Write-Log "PassiveMode: New-mailbox -UserPrincipalName $scopedacct -OrganizationalUnit $ResourcesOU -name $($u.displayname) -$($type)"
+            Write-Log "PassiveMode: New-mailbox -UserPrincipalName $scopedacct -OrganizationalUnit `"$ResourcesOU`" -name $($u.displayname) -$($type)"
+            Write-Log "PassiveMode: Set-Mailbox -Identity $scopedacct -HiddenFromAddressListsEnabled $true -EmailAddresses `"$($acct)+sfu_connect@sfu.ca`""
         }
         else {
             try {
                 if ($type -eq "Room")
                 {
-                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $scopedacct -Name $($u.displayname) -OrganizationalUnit $ResourcesOU -Room -ErrorAction Stop
+                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $scopedacct -Name $($u.displayname) -OrganizationalUnit "$ResourcesOU" -Room -ErrorAction Stop
                 }
                 else 
                 {
-                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $scopedacct -Name $($u.displayname) -OrganizationalUnit $ResourcesOU -Equipment -ErrorAction Stop
+                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $scopedacct -Name $($u.displayname) -OrganizationalUnit "$ResourcesOU" -Equipment -ErrorAction Stop
                 }
                 Set-Mailbox -Identity $scopedacct -HiddenFromAddressListsEnabled $true `
                             -EmailAddressPolicyEnabled $false `
@@ -172,7 +173,7 @@ foreach ($u in $users)
         $owner += "@sfu.ca"
     }
     try {
-        $mb = Get-Mailbox $owner
+        $mb = Get-Mailbox $owner -ErrorAction Stop
     }
     catch {
         Write-Log "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
