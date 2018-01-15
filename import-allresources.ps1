@@ -37,7 +37,7 @@ function load-settings($s_file)
     $global:RestToken = $settings.RestToken
     $global:UsersOU = $settings.UsersOU
     $global:ResourcesOU = $settings.ResourcesOU
-    $global:PassiveMode = ($settings.ImportPassiveMode -eq "true")
+    $global:PassiveMode = ($settings.ImportResourcesPassiveMode -eq "true")
 
 }
 
@@ -140,7 +140,30 @@ foreach ($u in $users)
 
     $AllowConflicts = ($u.autodeclineifbusy -eq "false")
 
-    run set-calendarresourceblahblah command here.
+    # Should we auto-accept meeting requests if not busy? Default is Yes
+    $AutomateProcessing = "AutoAccept"
+    if ($u.autoacceptdecline -eq "false")
+    {
+        # If set to False in Zimbra, set to "AutoUpdate" in Exchange, which means
+        # "Process meeting Updates but don't auto-process new meeting requests"
+        $AutomateProcessing = "AutoUpdate"
+    }
+
+    if ($PassiveMode)
+    {
+        Write-Log "PassiveMode: Set-CalendarProcessing -Identity $scopedacct -AutomateProcessing $AutomateProcessing -AllowConflicts $AllowConflicts"
+    }
+    else 
+    {
+        try {
+            Set-CalendarProcessing -Identity $scopedacct -AutomateProcessing $AutomateProcessing -AllowConflicts $AllowConflicts -ErrorAction Stop
+        }
+        catch 
+        {
+            Write-Log "There was a problem modifying calendar processing on $scopedacct : $_"
+        }    
+    }
+
 
     # Regardless of whether we just created the account, see if the permissions need updating
     $owner = $u.owner
@@ -159,12 +182,14 @@ foreach ($u in $users)
     if ($PassiveMode)
     {
         Write-Log "PassiveMode: Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All"
+        Write-Log "PassiveMode: Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner"
     }
     else 
     {
         try 
         {
             Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
+            Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner -ErrorAction Stop
         }
         catch 
         {
