@@ -194,6 +194,7 @@ try {
                     {
                         $HideInGal = $false
                         $addresses = @($username)
+                        $PreferredEmail = $scopedusername
                     }
                     else 
                     {
@@ -217,7 +218,21 @@ try {
                                 $HideInGal = $false
                             }
 
+                            $PreferredEmail = $amuser.preferredEmail
+                            if ($PreferredEmail -Notmatch "@.*sfu.ca")
+                            {
+                                # For that rare case when a user has specified a non-SFU PreferredEmail address in SFUDS
+                                $PreferredEmail = $username + "@sfu.ca"
+                            }
+
                             $addresses = @($username) + $amuser.aliases
+
+                            ## Security check - if PreferredEmail is an @*sfu.ca address, make sure its one of the user's own addresses
+                            if ($PreferredEmail -match "@.*sfu.ca" -and $addresses -notcontains ($PreferredEmail -replace "@.*sfu.ca"))
+                            {
+                                Write-Log "WARNING: $scopedusername Preferred Email address $PreferredEmail is not one of the their aliases. Ignoring"
+                                $PreferredEmail = $scopedusername
+                            }
                         }
                     }
 
@@ -231,7 +246,26 @@ try {
                         $error.Clear()
                     }
 
-                    $addresses = $addresses | % { $_ + "@sfu.ca"}
+                    # Preferred address comes first in EmailAddresses list
+                    $addresses = @($PreferredEmail) + $addresses
+
+                    $ScopedAddresses = @()
+                    ForEach ($addr in $addresses) {
+                        if ($addr -Notmatch "@")
+                        {
+                            $Scopedaddr = $addr + "@sfu.ca"
+                        }
+                        else 
+                        {
+                            $Scopedaddr = $addr
+                        }
+                        if ($ScopedAddresses -contains $Scopedaddr)
+                        {
+                            # eliminate duplicates
+                            continue
+                        }
+                        $ScopedAddresses += $Scopedaddr
+                    }
             
                     try 
                     {
@@ -244,7 +278,7 @@ try {
                         Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $HideInGal `
                                     -EmailAddressPolicyEnabled $false `
                                     -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
-                                    -EmailAddresses $addresses -ErrorAction Stop
+                                    -EmailAddresses $ScopedAddresses -ErrorAction Stop
                         Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
                         Set-CASMailbox $scopedusername -ActiveSyncEnabled $true -ErrorAction Stop
                         Write-Log "Enabled mailbox for $username"
