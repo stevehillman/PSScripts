@@ -119,11 +119,11 @@ foreach ($u in $users)
             try {
                 if ($type -eq "Room")
                 {
-                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $scopedacct -Name $($u.displayname) -OrganizationalUnit "$ResourcesOU" -Room -ErrorAction Stop
+                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $acct -Name "$($u.displayname)" -OrganizationalUnit "$ResourcesOU" -Room -ErrorAction Stop
                 }
                 else 
                 {
-                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $scopedacct -Name $($u.displayname) -OrganizationalUnit "$ResourcesOU" -Equipment -ErrorAction Stop
+                    $junk = New-Mailbox -UserPrincipalName $scopedacct -Alias $acct -Name "$($u.displayname)" -OrganizationalUnit "$ResourcesOU" -Equipment -ErrorAction Stop
                 }
                 Set-Mailbox -Identity $scopedacct -HiddenFromAddressListsEnabled $true `
                             -EmailAddressPolicyEnabled $false `
