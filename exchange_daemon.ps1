@@ -115,7 +115,7 @@ try {
                 }
                 
             }
-            elseif ($line -Match "^$Token getuser ([a-z\-@]+)")
+            elseif ($line -Match "^$Token getuser ([a-z0-9\-_@]+)")
             {
                 # Fetch a single user mailbox. Returns all attributes as a JSON hash
                 $Resp = Get-Mailbox $Matches[1] | ConvertTo-Json
@@ -180,7 +180,7 @@ try {
                     # $Writer.write("err: Error executing request: $($_.Exception.Message) `n")
                 }
             }
-            elseif ($line -Match "^$Token enableuser ([a-z0-9\-]+)")
+            elseif ($line -Match "^$Token enableuser ([a-z0-9\-_]+)")
             {
                 # Enable the mailbox of a user. This is "enabling" in the SFU sense, not Exchange sense.
                 # The mailbox's aliases are set properly, removing the "_not_migrated" suffix, and the HideInGal flag is 
@@ -294,7 +294,7 @@ try {
                     write-Log $_.toString()
                 }
             }
-            elseif ($line -Match "^$Token disableuser ([a-z0-9\-]+)")
+            elseif ($line -Match "^$Token disableuser ([a-z0-9\-_]+)")
             {
                 # disable (make invisible) a user's mailbox. This will normally only ever be used 
                 # if there was a problem migrating a user and the 'enableuser' function needs to be backed out
