@@ -324,6 +324,10 @@ try {
                 # break
                 $Resp="bye"
             }
+            elseif ($line -Match "^forcequit")
+            {
+                exit 0
+            }
             else
             {
                 $Resp = "Unrecognized command $line"
