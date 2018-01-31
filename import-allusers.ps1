@@ -185,6 +185,9 @@ foreach ($u in $users)
                             -ErrorAction Stop
                 Set-MailboxMessageConfiguration $userid -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
                 Set-CASMailbox $userid -ActiveSyncEnabled $false -ErrorAction Stop
+                # This last command adds mailbox permissions necessary for the 'imapsync' command to create folder structure. Access can be revoked
+                # as soon as that step is done.
+                $junk = Add-MailboxPermission -Identity $userid -User hillman@sfu.ca -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
                 Write-Log "Created mailbox for $($u.SamAccountName)"
             }
             catch
