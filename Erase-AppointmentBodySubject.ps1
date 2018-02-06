@@ -76,8 +76,21 @@ ForEach ($week in (($YearStart-2018)*52)..(($YearEnd-2018)*52))
     }
     else 
     {
-        ForEach ($item in $appointments)
+        ForEach ($appt in $appointments)
         {
+            $item = $appt
+            # We need to check whether this is a recurring event. If it is, we'll never be able to change
+            # each occurrence if it has no end date, so fetch the master and change it there. 
+            if ($item.AppointmentType -eq "Occurrence")
+            {
+                # try to fetch the master
+                $master =  [Microsoft.Exchange.WebServices.Data.Appointment]::BindToRecurringMaster($exchService, $item.Id)
+                if ($master.AppointmentType -eq "RecurringMaster")
+                {
+                    $item = $master
+                }
+            }
+
             $changed = $false
             if ($item.HasAttachments -And -Not $LeaveAttachments)
             {
