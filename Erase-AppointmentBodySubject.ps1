@@ -20,7 +20,7 @@ param(
     [parameter(Mandatory=$false)][switch]$Dry,
     [parameter(Mandatory=$false)][switch]$LeaveAttachments,
     [parameter(Mandatory=$false)][switch]$LeaveSubject,
-    [parameter(Mandatory=$false)][switch]$LeaveBody,
+    [parameter(Mandatory=$false)][switch]$LeaveBody
 
     )
 
@@ -70,20 +70,20 @@ ForEach ($year in -18..2)
         }
         else 
         {
-            ForEach $item in $appointments
+            ForEach ($item in $appointments)
             {
                 $changed = $false
-                if ($item.HasAttachments && -Not $LeaveAttachments)
+                if ($item.HasAttachments -And -Not $LeaveAttachments)
                 {
                     $item.Attachments.Clear()
                     $changed = $true
                 }
-                if (-Not $LeaveSubject && $item.Subject.Length > 0)
+                if (-Not $LeaveSubject -And $item.Subject.Length > 0)
                 {
                     $item.Subject = ""
                     $changed = $true
                 }
-                if (-Not $LeaveBody && $item.Body.Text.Length > 0)
+                if (-Not $LeaveBody -And $item.Body.Text.Length > 0)
                 {
                     $item.Body.Text = "[Removed for privacy]"
                     $changed = $true
