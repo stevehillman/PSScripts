@@ -51,12 +51,12 @@ $exchService.ImpersonatedUserId = New-Object Microsoft.Exchange.WebServices.Data
 
 # Loop over a years from 2000 to 2020
 
-ForEach ($day in (($YearStart-2018)*365)..(($YearEnd-2018)*365)
+ForEach ($week in (($YearStart-2018)*52)..(($YearEnd-2018)*52))
 {
     # Set up a calendar search spanning 1 month (approximately)
     # We only span one month at a time to prevent returning too many results.
     # The LoadPropertiesForItems call below will choke if there are too many items
-    $CalView = New-Object  Microsoft.Exchange.WebServices.Data.CalendarView($(Get-Date).AddDays($day), $(Get-Date).AddDays($day+1))
+    $CalView = New-Object  Microsoft.Exchange.WebServices.Data.CalendarView($(Get-Date).AddDays($day), $(Get-Date).AddDays($day+7))
 
     # Fetch all appts from the primary calendar in the given year (Note, Resources will never use secondary calendars)
     $appointments = $exchService.FindAppointments("Calendar",$CalView)
@@ -72,7 +72,7 @@ ForEach ($day in (($YearStart-2018)*365)..(($YearEnd-2018)*365)
 
     if ($Dry)
     {
-        $appointments | ft Start,End,Subject,Attachments,Body
+        $appointments | ft Start,End,Subject,Attachments,Body,isCancelled,isRecurring
     }
     else 
     {
