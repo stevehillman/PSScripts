@@ -44,7 +44,7 @@ else {
 }
 
 # Set up impersonation
-$service.ImpersonatedUserId = New-Object Microsoft.Exchange.WebServices.Data.ImpersonatedUserId([Microsoft.Exchange.WebServices.Data.ConnectingIdType]::SmtpAddress,$Mailbox );
+$exchService.ImpersonatedUserId = New-Object Microsoft.Exchange.WebServices.Data.ImpersonatedUserId([Microsoft.Exchange.WebServices.Data.ConnectingIdType]::SmtpAddress,$Mailbox );
 
 
 # Loop over a years from 2000 to 2020
@@ -60,6 +60,12 @@ ForEach ($year in -18..2)
 
         # Fetch all appts from the primary calendar in the given year (Note, Resources will never use secondary calendars)
         $appointments = $exchService.FindAppointments("Calendar",$CalView)
+
+        if ($appointments.TotalCount -eq 0)
+        {
+            #nothing found. Next.
+            Continue
+        }
 
         # Fetch the body for the returned appointments
         $exchService.LoadPropertiesForItems($appointments, [Microsoft.Exchange.WebServices.Data.PropertySet]::FirstClassProperties)
