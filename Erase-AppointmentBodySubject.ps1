@@ -66,7 +66,7 @@ ForEach ($year in -18..2)
 
         if ($Dry)
         {
-            $appointments | ft Start,End,Subject,Body
+            $appointments | ft Start,End,Subject,Attachments,Body
         }
         else 
         {
@@ -75,7 +75,7 @@ ForEach ($year in -18..2)
                 $changed = $false
                 if ($item.HasAttachments && -Not $LeaveAttachments)
                 {
-                    $item.DeleteAttachments.Clear()
+                    $item.Attachments.Clear()
                     $changed = $true
                 }
                 if (-Not $LeaveSubject && $item.Subject.Length > 0)
@@ -91,7 +91,7 @@ ForEach ($year in -18..2)
                 if ($changed)
                 {
                     # Save back to Exchange
-                    $item.Update(Microsoft.Exchange.WebServices.Data.ConflictResolutionMode::AlwaysOverwrite,  Microsoft.Exchange.WebServices.Data.SendInvitationsOrCancellationsMode::SendToNone)
+                    $item.Update([Microsoft.Exchange.WebServices.Data.ConflictResolutionMode]::AlwaysOverwrite, [Microsoft.Exchange.WebServices.Data.SendInvitationsOrCancellationsMode]::SendToNone)
                 }
             }    
         }
