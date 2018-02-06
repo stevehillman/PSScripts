@@ -56,7 +56,7 @@ ForEach ($week in (($YearStart-2018)*52)..(($YearEnd-2018)*52))
     # Set up a calendar search spanning 1 month (approximately)
     # We only span one month at a time to prevent returning too many results.
     # The LoadPropertiesForItems call below will choke if there are too many items
-    $CalView = New-Object  Microsoft.Exchange.WebServices.Data.CalendarView($(Get-Date).AddDays($week), $(Get-Date).AddDays($week+7))
+    $CalView = New-Object  Microsoft.Exchange.WebServices.Data.CalendarView($(Get-Date).AddDays($week*7), $(Get-Date).AddDays(($week+1)*7))
 
     # Fetch all appts from the primary calendar in the given year (Note, Resources will never use secondary calendars)
     $appointments = $exchService.FindAppointments("Calendar",$CalView)
@@ -72,7 +72,7 @@ ForEach ($week in (($YearStart-2018)*52)..(($YearEnd-2018)*52))
 
     if ($Dry)
     {
-        $appointments | ft Start,End,Subject,Attachments,isCancelled,isRecurring,Body
+        $appointments | ft Start,End,Subject,Attachments,Body
     }
     else 
     {
