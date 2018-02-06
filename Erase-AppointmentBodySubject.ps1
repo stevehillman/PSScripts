@@ -51,58 +51,54 @@ $exchService.ImpersonatedUserId = New-Object Microsoft.Exchange.WebServices.Data
 
 # Loop over a years from 2000 to 2020
 
-ForEach ($year in ($YearStart-2018)..($YearEnd-2018))
+ForEach ($day in (($YearStart-2018)*365)..(($YearEnd-2018)*365)
 {
-    ForEach ($month in 0..11)
+    # Set up a calendar search spanning 1 month (approximately)
+    # We only span one month at a time to prevent returning too many results.
+    # The LoadPropertiesForItems call below will choke if there are too many items
+    $CalView = New-Object  Microsoft.Exchange.WebServices.Data.CalendarView($(Get-Date).AddDays($day), $(Get-Date).AddDays($day+1))
+
+    # Fetch all appts from the primary calendar in the given year (Note, Resources will never use secondary calendars)
+    $appointments = $exchService.FindAppointments("Calendar",$CalView)
+
+    if ($appointments.TotalCount -eq 0)
     {
-        # Set up a calendar search spanning 1 month (approximately)
-        # We only span one month at a time to prevent returning too many results.
-        # The LoadPropertiesForItems call below will choke if there are too many items
-        $CalView = New-Object  Microsoft.Exchange.WebServices.Data.CalendarView($(Get-Date).AddDays(($year*365)+ ($month*31)), $(Get-Date).AddDays(($year*365) + ($month+1)*31))
+        #nothing found. Next.
+        Continue
+    }
 
-        # Fetch all appts from the primary calendar in the given year (Note, Resources will never use secondary calendars)
-        $appointments = $exchService.FindAppointments("Calendar",$CalView)
+    # Fetch the body for the returned appointments
+    $junk = $exchService.LoadPropertiesForItems($appointments, [Microsoft.Exchange.WebServices.Data.PropertySet]::FirstClassProperties)
 
-        if ($appointments.TotalCount -eq 0)
+    if ($Dry)
+    {
+        $appointments | ft Start,End,Subject,Attachments,Body
+    }
+    else 
+    {
+        ForEach ($item in $appointments)
         {
-            #nothing found. Next.
-            Continue
-        }
-
-        # Fetch the body for the returned appointments
-        $junk = $exchService.LoadPropertiesForItems($appointments, [Microsoft.Exchange.WebServices.Data.PropertySet]::FirstClassProperties)
-
-        if ($Dry)
-        {
-            $appointments | ft Start,End,Subject,Attachments,Body
-        }
-        else 
-        {
-            ForEach ($item in $appointments)
+            $changed = $false
+            if ($item.HasAttachments -And -Not $LeaveAttachments)
             {
-                $changed = $false
-                if ($item.HasAttachments -And -Not $LeaveAttachments)
-                {
-                    $item.Attachments.Clear()
-                    $changed = $true
-                }
-                if ((-Not $LeaveSubject) -And $item.Subject.Length -gt 0)
-                {
-                    $item.Subject = ""
-                    $changed = $true
-                }
-                if ((-Not $LeaveBody) -And $item.Body.Text.Length -gt 0)
-                {
-                    $item.Body.Text = "[Removed for privacy]"
-                    $changed = $true
-                }
-                if ($changed)
-                {
-                    # Save back to Exchange
-                    $item.Update([Microsoft.Exchange.WebServices.Data.ConflictResolutionMode]::AlwaysOverwrite, [Microsoft.Exchange.WebServices.Data.SendInvitationsOrCancellationsMode]::SendToNone)
-                }
-            }    
-        }
-
+                $item.Attachments.Clear()
+                $changed = $true
+            }
+            if ((-Not $LeaveSubject) -And $item.Subject.Length -gt 0)
+            {
+                $item.Subject = ""
+                $changed = $true
+            }
+            if ((-Not $LeaveBody) -And $item.Body.Text.Length -gt 0 -And $item.Body.Text -Notmatch "\[Removed for privacy\]")
+            {
+                $item.Body.Text = "[Removed for privacy]"
+                $changed = $true
+            }
+            if ($changed)
+            {
+                # Save back to Exchange
+                $item.Update([Microsoft.Exchange.WebServices.Data.ConflictResolutionMode]::AlwaysOverwrite, [Microsoft.Exchange.WebServices.Data.SendInvitationsOrCancellationsMode]::SendToNone)
+            }
+        }    
     }
 }
