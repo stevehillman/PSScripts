@@ -18,6 +18,8 @@ param(
     [parameter(Mandatory=$true)][string]$Mailbox,
     [parameter(Mandatory=$true)][string]$Url,
     [parameter(Mandatory=$false)][switch]$Dry,
+    [parameter(Mandatory=$false)][int]$YearStart = 2000,
+    [parameter(Mandatory=$false)][int]$YearEnd = 2025,
     [parameter(Mandatory=$false)][switch]$LeaveAttachments,
     [parameter(Mandatory=$false)][switch]$LeaveSubject,
     [parameter(Mandatory=$false)][switch]$LeaveBody
@@ -49,7 +51,7 @@ $exchService.ImpersonatedUserId = New-Object Microsoft.Exchange.WebServices.Data
 
 # Loop over a years from 2000 to 2020
 
-ForEach ($year in -18..2)
+ForEach ($year in ($YearStart-2018)..($YearEnd-2018))
 {
     ForEach ($month in 0..11)
     {
@@ -68,7 +70,7 @@ ForEach ($year in -18..2)
         }
 
         # Fetch the body for the returned appointments
-        $exchService.LoadPropertiesForItems($appointments, [Microsoft.Exchange.WebServices.Data.PropertySet]::FirstClassProperties)
+        $junk = $exchService.LoadPropertiesForItems($appointments, [Microsoft.Exchange.WebServices.Data.PropertySet]::FirstClassProperties)
 
         if ($Dry)
         {
