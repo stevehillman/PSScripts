@@ -86,12 +86,12 @@ ForEach ($year in ($YearStart-2018)..($YearEnd-2018))
                     $item.Attachments.Clear()
                     $changed = $true
                 }
-                if (-Not $LeaveSubject -And $item.Subject.Length > 0)
+                if ((-Not $LeaveSubject) -And $item.Subject.Length > 0)
                 {
                     $item.Subject = ""
                     $changed = $true
                 }
-                if (-Not $LeaveBody -And $item.Body.Text.Length > 0)
+                if ((-Not $LeaveBody) -And $item.Body.Text.Length > 0)
                 {
                     $item.Body.Text = "[Removed for privacy]"
                     $changed = $true
