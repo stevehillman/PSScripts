@@ -51,6 +51,8 @@ $exchService.ImpersonatedUserId = New-Object Microsoft.Exchange.WebServices.Data
 
 # Loop over a years from 2000 to 2020
 
+$total = 0
+
 ForEach ($week in (($YearStart-2018)*52)..(($YearEnd-2018)*52))
 {
     # Set up a calendar search spanning 1 month (approximately)
@@ -66,6 +68,8 @@ ForEach ($week in (($YearStart-2018)*52)..(($YearEnd-2018)*52))
         #nothing found. Next.
         Continue
     }
+
+    $totalatstart = $total
 
     # Fetch the body for the returned appointments
     $junk = $exchService.LoadPropertiesForItems($appointments, [Microsoft.Exchange.WebServices.Data.PropertySet]::FirstClassProperties)
@@ -110,8 +114,15 @@ ForEach ($week in (($YearStart-2018)*52)..(($YearEnd-2018)*52))
             if ($changed)
             {
                 # Save back to Exchange
+                $total++
                 $item.Update([Microsoft.Exchange.WebServices.Data.ConflictResolutionMode]::AlwaysOverwrite, [Microsoft.Exchange.WebServices.Data.SendInvitationsOrCancellationsMode]::SendToNone)
             }
         }    
     }
+    if ($total -gt $totalatstart)
+    {
+        Write-Verbose("Changed $total appointments")
+    }
 }
+
+Write-host "Changed $total appointments"
