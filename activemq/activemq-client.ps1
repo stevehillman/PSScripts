@@ -50,12 +50,107 @@ function process-message($xmlmsg)
     {
         return process-amaint-message($xmlmsg)
     }
+    elseif ($msg.compromisedlogin)
+    {
+        return process-compromised-message($xmlmsg)
+    }
     # Add other message types here in the future
     else
     {
         Write-Log "Ignoring msg: Unsupported type"
         return 1
     }
+}
+
+# Check whether a user is on Exchange.
+# Returns true if they are, throws an exception if there was an error while checking
+function OnExchange($acct)
+{
+    try 
+    {   
+        $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListPrimary -Member $acct -AuthToken $RestToken
+        if (-Not $rc)
+        {
+            $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListSecondary -Member $acct -AuthToken $RestToken
+        }
+    }
+    catch {
+        $global:LastError =  "Error communicating with REST Server for $username. Aborting processing of msg. $_"
+        throw $LastError
+    }
+    return $rc
+}
+
+function process-compromised-message($xmlmsg)
+{
+    $username = $xmlmsg.compromisedlogin.username
+
+    try {
+        $rc = OnExchange($username)
+    }
+    catch {
+        Write-Log $_
+        return 0
+    }
+
+    if (-Not $rc)
+    {
+        Write-Log "Skipping Compromised Account $username. Not a member of $ExchangeUsersListPrimary or $ExchangeUsersListSecondary"
+        return 1
+    }
+
+    Write-Log "Processing Compromised Account $username"
+
+    # Verify the user in AD
+    try {
+        $aduser = Get-ADUser $username
+    }
+    catch {
+        # Either they don't exist or there's an AD error. Either way we can't continue
+        $global:LastError = "$username not found in AD. Failing: $_"
+        Write-Log $LastError
+        return 0
+    }
+
+    $scopedusername = $username + "@sfu.ca"
+
+    # Verify the user has a mailbox
+    try {
+        $mailbox = Get-Mailbox $scopedusername -ErrorAction Stop
+    }
+    catch {
+        # Nope
+        Write-Log "No mailbox found for $scopedusername. Skipping"
+        return 1
+    }
+
+    # Unless compromised-message says otherwise, clear Exchange settings
+    if ($xmlmsg.compromisedlogin.settings.resetexchange -match "false")
+    {
+        return 1
+    }
+
+    # Start of account cleanup
+
+    # Disable OWA and MAPI access. 
+    # NOTE: There needs to be a way to re-enable this after a user has changed their password.
+    Set-CASMailbox $scopedusername -OWAEnabled $false -MAPIEnabled $false
+
+    # Disable all rules
+    Get-InboxRule -Mailbox $scopedusername | Disable-InboxRule
+
+    # Clear signatures
+    Set-MailboxMessageConfiguration $scopedusername -SignatureHTML "" -SignatureText ""
+
+    # Ensure mail isn't being forwarded
+    Set-Mailbox $scopedusername -DeliverToMailboxAndForward $false -ForwardingSMTPAddress ""
+
+    # TODO
+    # We should give each Compromised Mesage a unique identifier and 
+    # generate a reply ActiveMQ status message indicating what was done for that identifier.
+    # That's Phase 2
+
+    return 1
 }
 
 # Process an ActiveMQ message from Amaint
@@ -94,15 +189,10 @@ function process-amaint-message($xmlmsg)
     if (!$AddNewUsers -and !$PassiveMode)
     {
         try {
-            $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListPrimary -Member $username -AuthToken $RestToken
-            if (-Not $rc)
-            {
-                $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListSecondary -Member $username -AuthToken $RestToken
-            }
+            $rc = OnExchange($username)
         }
         catch {
-            $global:LastError =  "Error communicating with REST Server for $username. Aborting processing of msg. $_"
-            Write-Log $LastError
+            Write-Log $_
             return 0
         }
 
