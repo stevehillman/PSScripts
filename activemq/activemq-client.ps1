@@ -133,17 +133,40 @@ function process-compromised-message($xmlmsg)
     # Start of account cleanup
 
     # Disable OWA and MAPI access. 
+    # Is there any point in doing this? It doesn't kill existing sessions, just prevents new ones from being started
     # NOTE: There needs to be a way to re-enable this after a user has changed their password.
-    Set-CASMailbox $scopedusername -OWAEnabled $false -MAPIEnabled $false
+    #Set-CASMailbox $scopedusername -OWAEnabled $false -MAPIEnabled $false
 
     # Disable all rules
-    Get-InboxRule -Mailbox $scopedusername | Disable-InboxRule
+    try {
+        $rules = Get-InboxRule -Mailbox $scopedusername | where {$_.Enabled}
+        $result = $rules.Count + " rules disabled. "
+        $rules | Disable-InboxRule
+    }
+    catch {
+        $result = "An error occurred disabling rules: $_ . "
+    }
 
     # Clear signatures
-    Set-MailboxMessageConfiguration $scopedusername -SignatureHTML "" -SignatureText ""
+    try {
+        Set-MailboxMessageConfiguration $scopedusername -SignatureHTML "" -SignatureText ""
+    }
+    catch {
+        $result = $result + "Error clearing signatures: $_ . "
+    }
 
     # Ensure mail isn't being forwarded
-    Set-Mailbox $scopedusername -DeliverToMailboxAndForward $false -ForwardingSMTPAddress ""
+    if ($mailbox.ForwardingSMTPAddress -ne "")
+    {
+        try {
+            Set-Mailbox $scopedusername -DeliverToMailboxAndForward $false -ForwardingSMTPAddress ""
+            $result = $result + "Forwarding cleared from $($mailbox.ForwardingSMTPAddress). "
+        }
+        catch {
+            $result = $result + "Error clearing forwarding: $_ . "
+        }
+    }
+
 
     # TODO
     # We should give each Compromised Mesage a unique identifier and 
