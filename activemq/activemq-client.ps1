@@ -12,6 +12,7 @@ Import-Module -Name PSAOBRestClient
 $me = $env:username
 $LogFile = "C:\Users\$me\activemq_client.log"
 $SettingsFile = "C:\Users\$me\settings.json"
+$ConnectUsersFile = "C:\Users\$me\ConnectUsers.json"
 
 
 ## Local private functions ##
@@ -34,9 +35,29 @@ function load-settings($s_file)
     $global:ErrorsToEmail = $settings.ErrorsToEmail
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
-    $global:AddNewUsers = ($settings.AddNewUsers -eq "true")
+    $global:AddNewUsersDate = $settings.AddNewUsersDate
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
     $global:SubDomains = $settings.SubDomains
+    $global:SubscribeURL = $settings.SubscribeURL
+    $global:AddNewUsers = $false
+}
+
+$ConnectUsersDate = "00000000"
+
+
+# Load in the list of current Connect Users once a day. Relies on an external process
+# to update the contents of the ConnectUsers file.
+function Load-ConnectUsers()
+{
+    if (-Not ($now -gt 1))
+    {
+        $global:now = Get-Date -Format FileDate
+    }
+    if ($ConnectUsersDate -lt $now -and Test-Path $ConnectUsersFile)
+    {
+        $ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
+        $ConnectUsersDate = $now
+    }
 }
 
 function Write-Log($logmsg)
@@ -44,10 +65,39 @@ function Write-Log($logmsg)
     Add-Content $LogFile "$(date) : $logmsg"
 }
 
+function Add-MemberToMaillist($u,$l)
+{
+    $url = $SubscribeURL + $l + "&address=" + $u
+    try {
+        $result = Invoke-RestMethod -Method "GET" -Uri $url -ErrorAction 'Stop'
+    }
+    catch {
+        # REST call failed. Bad news
+        Throw "Failed to add member to list"
+    }
+    if ($result -match "^ok" -or $result -match "already a member")
+    {
+        return $true
+    }
+    else
+    {
+        # Something else went wrong
+        Throw $result
+    }
+}
+
 function process-message($xmlmsg)
 {
     if ($msg.synclogin)
     {
+        if (-Not $AddNewUsers)
+        {
+            $global:now = Get-Date -Format FileDate
+            if ($now -ge $AddNewUsersDate)
+            {
+                $global:AddNewUsers = $true;
+            }
+        }
         return process-amaint-message($xmlmsg)
     }
     # Add other message types here in the future
@@ -128,6 +178,9 @@ function process-amaint-message($xmlmsg)
 
     $create = $false
     $update = $false
+    $AddToMaillist = $false
+    $AddToLightweightMigrations = $false
+
     $scopedusername = $username + "@sfu.ca"
     # See if the user already has an Exchange Mailbox
     try {
@@ -143,6 +196,36 @@ function process-amaint-message($xmlmsg)
         }    
         $create = $true
         $update = $true
+    }
+
+    $roles = @($xmlmsg.synclogin.person.roles.ChildNodes.InnerText)
+
+    if ($create -and $AddNewUsers)
+    {
+        # Check whether the user exists in Connect.
+        if ($ConnectUsers.ContainsKey($username))
+        {
+            # Yeup
+            $userConnectStatus = $ConnectUsers.Get_Item($username)
+            if ($userConnectStatus -match "lightweight")
+            {
+                # Ok to activate in Exchange, but signal that their Connect content needs to be migrated
+                $AddToLightweightMigrations = $true
+                $AddToMaillist = $true
+            }
+            else
+            {
+                # fullweight Connect account exists
+                $create = $false
+                $update = $false
+            }
+        }
+        else
+        {
+            # Not in Connect
+            # At least for now, just fall through to create account if they don't exist in Connect
+            $AddToMaillist = $true
+        }
     }
     
     # No mailbox exists, Enable the mailbox in Exchange
@@ -173,13 +256,36 @@ function process-amaint-message($xmlmsg)
                  Write-Log $LastError
                  return 0
             }
+            if ($AddToMaillist)
+            {
+                try {
+                    Add-MemberToMaillist($username,$ExchangeUsersListPrimary)
+                }
+                catch {
+                    # If the user doesn't get added to the previous list, they won't get email in the new environment from anywhere but inside Exchange.
+                    # This is not a catastrophe, so allow the process to continue, but alert Steve to manually add the user ASAP.
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Error adding $username to list $ExchangeUsersListPrimary" `
+                    -SmtpServer $SmtpServer -Body "$_"
+                }
+            }
+            if ($AddToLightweightMigrations)
+            {
+                try {
+                    Add-MemberToMaillist($username,"lightweight-migrations")
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Lightweight acct $username converted to Exchange" `
+                    -SmtpServer $SmtpServer -Body "Make sure their SFUConnect data gets migrated."
+                }
+                catch {
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Error adding $username to list lightweight-migrations" `
+                    -SmtpServer $SmtpServer -Body "$_"
+                }
+            }
         }
     }
 
     # Default to hidden in GAL
     $hideInGal=$true
 
-    $roles = @($xmlmsg.synclogin.person.roles.ChildNodes.InnerText)
     if ($roles -contains "staff" -or $roles -contains "faculty" -or ($roles -contains "other" -and [int]$xmlmsg.synclogin.person.sfuVisibility -gt 4))
     {
         if ($mbenabled)
