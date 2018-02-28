@@ -51,7 +51,7 @@ function Load-ConnectUsers()
 {
     $global:now = Get-Date -Format FileDate
     
-    if ($ConnectUsersDate -lt $now -and Test-Path $ConnectUsersFile)
+    if ($ConnectUsersDate -lt $now -and (Test-Path $ConnectUsersFile))
     {
         $global:ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
         $ConnectUsersDate = $now
@@ -232,7 +232,7 @@ function process-amaint-message($xmlmsg)
                 {
                     # If they aren't already on the 'pending' list, add them and notify Steve
                     try {
-                        if (Add-UserToMaillist($username,"exchange-migrations-pending")
+                        if (Add-UserToMaillist($username,"exchange-migrations-pending"))
                         {
                             $msgSubject = "User $username needs to be migrated to Exchange"
                             $msgBody = "Added to exchange-migrations-pending"
