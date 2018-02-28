@@ -49,13 +49,11 @@ $ConnectUsersDate = "00000000"
 # to update the contents of the ConnectUsers file.
 function Load-ConnectUsers()
 {
-    if (-Not ($now -gt 1))
-    {
-        $global:now = Get-Date -Format FileDate
-    }
+    $global:now = Get-Date -Format FileDate
+    
     if ($ConnectUsersDate -lt $now -and Test-Path $ConnectUsersFile)
     {
-        $ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
+        $global:ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
         $ConnectUsersDate = $now
     }
 }
@@ -65,7 +63,10 @@ function Write-Log($logmsg)
     Add-Content $LogFile "$(date) : $logmsg"
 }
 
-function Add-MemberToMaillist($u,$l)
+# Add user to a maillist.
+# Returns $true on success, $false if they're already a member.
+# Throws an exception if any other error occurred.
+function Add-UserToMaillist($u,$l)
 {
     $url = $SubscribeURL + $l + "&address=" + $u
     try {
@@ -75,9 +76,13 @@ function Add-MemberToMaillist($u,$l)
         # REST call failed. Bad news
         Throw "Failed to add member to list"
     }
-    if ($result -match "^ok" -or $result -match "already a member")
+    if ($result -match "^ok")
     {
         return $true
+    } 
+    elseif ($result -match "already a member")
+    {
+        return $false
     }
     else
     {
@@ -212,12 +217,47 @@ function process-amaint-message($xmlmsg)
                 # Ok to activate in Exchange, but signal that their Connect content needs to be migrated
                 $AddToLightweightMigrations = $true
                 $AddToMaillist = $true
+
+                #### For testing. Remove after.
+                Write-Log "TESTING: $username is lightweight in Connect and would be activated in Exchange."
+                return 1
+                ####
             }
             else
             {
-                # fullweight Connect account exists
-                $create = $false
-                $update = $false
+                # fullweight Connect account exists. 
+                # Check if they have a staff/faculty/other role. If they don't, we can ignore this update
+                # until after Aug 10th-ish (whenever the cutoff date is for all remaining users)
+                if ($roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other")
+                {
+                    # If they aren't already on the 'pending' list, add them and notify Steve
+                    try {
+                        if (Add-UserToMaillist($username,"exchange-migrations-pending")
+                        {
+                            $msgSubject = "User $username needs to be migrated to Exchange"
+                            $msgBody = "Added to exchange-migrations-pending"
+                        }
+                        else
+                        {
+                            # Already on there. Nothing to do.
+                            Write-Log "Skipping update for $username. Still has fullweight Connect account and already added to exchange-migrations-pending"
+                            return 1
+                        } 
+                    }
+                    catch {
+                        # Error adding user to list. Notify Steve but do nothing else.
+                        $msgSubject = "User $username needs to be migrated to Exchange but an error occurred"
+                        $msgBody = "Error occurred adding user to exchange-migrations-pending: $_"
+                    }
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "$msgSubject" `
+                        -SmtpServer $SmtpServer -Body "$msgBody"
+                }
+                else
+                {
+                    # Student, retiree, or f_ role only. Ignore but log.
+                    Write-Log "Skipping update for $username. Still has fullweight Connect account and no staff/faculty/sponsored role"
+                }
+                return 1
             }
         }
         else
@@ -225,6 +265,11 @@ function process-amaint-message($xmlmsg)
             # Not in Connect
             # At least for now, just fall through to create account if they don't exist in Connect
             $AddToMaillist = $true
+
+            #### For Testing. Remove after.
+            Write-Log "TESTING: $username not in Connect and would be activated in Exchange"
+            return 1
+            ####
         }
     }
     
@@ -259,7 +304,7 @@ function process-amaint-message($xmlmsg)
             if ($AddToMaillist)
             {
                 try {
-                    Add-MemberToMaillist($username,$ExchangeUsersListPrimary)
+                    Add-UserToMaillist($username,$ExchangeUsersListPrimary)
                 }
                 catch {
                     # If the user doesn't get added to the previous list, they won't get email in the new environment from anywhere but inside Exchange.
@@ -271,7 +316,7 @@ function process-amaint-message($xmlmsg)
             if ($AddToLightweightMigrations)
             {
                 try {
-                    Add-MemberToMaillist($username,"lightweight-migrations")
+                    Add-UserToMaillist($username,"lightweight-migrations")
                     Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Lightweight acct $username converted to Exchange" `
                     -SmtpServer $SmtpServer -Body "Make sure their SFUConnect data gets migrated."
                 }
