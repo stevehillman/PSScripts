@@ -69,7 +69,7 @@ function Write-Log($logmsg)
 # Throws an exception if any other error occurred.
 function Add-UserToMaillist($u,$l)
 {
-    $url = $SubscribeURL + $l + "&address" + $u
+    $url = $SubscribeURL + $l + "&address=" + $u
     try {
         $result = Invoke-RestMethod -Method "GET" -Uri $url -ErrorAction 'Stop'
     }
