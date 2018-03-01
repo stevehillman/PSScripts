@@ -243,7 +243,7 @@ function process-amaint-message($xmlmsg)
                 # fullweight Connect account exists. 
                 # Check if they have a staff/faculty/other role. If they don't, we can ignore this update
                 # until after Aug 10th-ish (whenever the cutoff date is for all remaining users)
-                if ($AddAllUsers -eq $false -and ($roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other"))
+                if ($AddAllUsers -or $roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other")
                 {
                     # If they aren't already on the 'pending' list, add them and notify Steve
                     try {
