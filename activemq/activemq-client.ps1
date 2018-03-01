@@ -211,13 +211,12 @@ function process-amaint-message($xmlmsg)
     {
         # See if ConnectUsers hash needs reloading
         Load-ConnectUsers
-        
+
         # Check whether the user exists in Connect.
-        if ($ConnectUsers.ContainsKey($username))
+        if ($ConnectUsers.$username)
         {
             # Yeup
-            $userConnectStatus = $ConnectUsers.Get_Item($username)
-            if ($userConnectStatus -match "lightweight")
+            if ($ConnectUsers.$username -match "lightweight")
             {
                 # Ok to activate in Exchange, but signal that their Connect content needs to be migrated
                 $AddToLightweightMigrations = $true
