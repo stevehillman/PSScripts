@@ -36,10 +36,12 @@ function load-settings($s_file)
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
     $global:AddNewUsersDate = $settings.AddNewUsersDate
+    $global:AddAllUsersDate = $settings.AllAllUsersDate
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
     $global:SubDomains = $settings.SubDomains
     $global:SubscribeURL = $settings.SubscribeURL
     $global:AddNewUsers = $false
+    $global:AddAllUsers = $false
 }
 
 $ConnectUsersDate = "00000000"
@@ -55,7 +57,7 @@ function Load-ConnectUsers()
     {
         $global:ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
         $ConnectUsersDate = $now
-        Write-Log "Imported $($ConnectUsers.Count) users from $ConnectUsersFile"
+        Write-Log "Imported $($ConnectUsers.PSObject.Properties.Name.Count) users from $ConnectUsersFile"
     }
 }
 
@@ -96,13 +98,22 @@ function process-message($xmlmsg)
 {
     if ($msg.synclogin)
     {
+        $global:now = Get-Date -Format FileDate
         if (-Not $AddNewUsers)
         {
-            $global:now = Get-Date -Format FileDate
             if ($now -ge $AddNewUsersDate)
             {
-                $global:AddNewUsers = $true;
+                $global:AddNewUsers = $true
                 Write-Log("$AddNewUsersDate has passed. Invoking NewUser processing")
+            }
+        }
+        if (-Not $AddAllUsers)
+        {
+            if ($now -ge $AddAllUsersDate)
+            {
+                $global:AddAllUsers = $true
+                Write-Log("$AddAllUsersDate has passed. Invoking AllUser processing")
+
             }
         }
         return process-amaint-message($xmlmsg)
@@ -232,7 +243,7 @@ function process-amaint-message($xmlmsg)
                 # fullweight Connect account exists. 
                 # Check if they have a staff/faculty/other role. If they don't, we can ignore this update
                 # until after Aug 10th-ish (whenever the cutoff date is for all remaining users)
-                if ($roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other")
+                if ($AddAllUsers -eq $false -and ($roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other"))
                 {
                     # If they aren't already on the 'pending' list, add them and notify Steve
                     try {
