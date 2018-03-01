@@ -209,6 +209,9 @@ function process-amaint-message($xmlmsg)
 
     if ($create -and $AddNewUsers)
     {
+        # See if ConnectUsers hash needs reloading
+        Load-ConnectUsers
+        
         # Check whether the user exists in Connect.
         if ($ConnectUsers.ContainsKey($username))
         {
