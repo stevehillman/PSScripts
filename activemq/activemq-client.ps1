@@ -69,7 +69,7 @@ function Write-Log($logmsg)
 # Throws an exception if any other error occurred.
 function Add-UserToMaillist($u,$l)
 {
-    $url = "$($SubscribeURL)$($l)&address=$u"
+    $url = $SubscribeURL + $l + "&address" + $u
     try {
         $result = Invoke-RestMethod -Method "GET" -Uri $url -ErrorAction 'Stop'
     }
@@ -236,7 +236,7 @@ function process-amaint-message($xmlmsg)
                 {
                     # If they aren't already on the 'pending' list, add them and notify Steve
                     try {
-                        if (Add-UserToMaillist($username,"exchange-migrations-pending"))
+                        if (Add-UserToMaillist $username "exchange-migrations-pending")
                         {
                             $msgSubject = "User $username needs to be migrated to Exchange"
                             $msgBody = "Added to exchange-migrations-pending"
@@ -308,7 +308,7 @@ function process-amaint-message($xmlmsg)
             if ($AddToMaillist)
             {
                 try {
-                    Add-UserToMaillist($username,$ExchangeUsersListPrimary)
+                    Add-UserToMaillist $username $ExchangeUsersListPrimary
                 }
                 catch {
                     # If the user doesn't get added to the previous list, they won't get email in the new environment from anywhere but inside Exchange.
@@ -320,7 +320,7 @@ function process-amaint-message($xmlmsg)
             if ($AddToLightweightMigrations)
             {
                 try {
-                    Add-UserToMaillist($username,"lightweight-migrations")
+                    Add-UserToMaillist $username "lightweight-migrations" 
                     Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Lightweight acct $username converted to Exchange" `
                     -SmtpServer $SmtpServer -Body "Make sure their SFUConnect data gets migrated."
                 }
