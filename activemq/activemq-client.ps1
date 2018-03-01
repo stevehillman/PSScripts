@@ -55,6 +55,7 @@ function Load-ConnectUsers()
     {
         $global:ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
         $ConnectUsersDate = $now
+        Write-Log "Imported $($ConnectUsers.Count) users from $ConnectUsersFile"
     }
 }
 
@@ -101,6 +102,7 @@ function process-message($xmlmsg)
             if ($now -ge $AddNewUsersDate)
             {
                 $global:AddNewUsers = $true;
+                Write-Log("$AddNewUsersDate has passed. Invoking NewUser processing")
             }
         }
         return process-amaint-message($xmlmsg)
