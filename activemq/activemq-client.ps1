@@ -378,9 +378,15 @@ function process-amaint-message($xmlmsg)
             }
         }   
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
-        if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($xmlmsg.syncLogin.login.aliases.ChildNodes.InnerText))
-        {
-            Write-Log "Aliases have changed. Exchange had: $($aliases -join ','). Updating"
+        try {
+            if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($xmlmsg.syncLogin.login.aliases.ChildNodes.InnerText))
+            {
+                Write-Log "Aliases have changed. Exchange had: $($aliases -join ','). Updating"
+                $update = $true
+            }
+        }
+        catch {
+            # The above can fail if the user has no aliases. Set update to true *just in case*
             $update = $true
         }
 
