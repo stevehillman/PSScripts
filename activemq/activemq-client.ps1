@@ -232,11 +232,6 @@ function process-amaint-message($xmlmsg)
                 # Ok to activate in Exchange, but signal that their Connect content needs to be migrated
                 $AddToLightweightMigrations = $true
                 $AddToMaillist = $true
-
-                #### For testing. Remove after.
-                Write-Log "TESTING: $username is lightweight in Connect and would be activated in Exchange."
-                return 1
-                ####
             }
             else
             {
@@ -280,11 +275,6 @@ function process-amaint-message($xmlmsg)
             # Not in Connect
             # At least for now, just fall through to create account if they don't exist in Connect
             $AddToMaillist = $true
-
-            #### For Testing. Remove after.
-            Write-Log "TESTING: $username not in Connect and would be activated in Exchange"
-            return 1
-            ####
         }
     }
     
