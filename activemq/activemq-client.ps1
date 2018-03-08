@@ -24,6 +24,7 @@ function load-settings($s_file)
     $global:Username = $settings.amqUsername
     $global:Password = $settings.amqPassword
     $global:queueName = $settings.QueueName
+    $global:queueResponseName = $settings.queueResponseName
     $global:retryQueueName = $settings.RetryQueueName
     $global:RestToken = $settings.RestToken
     $global:MaxRetries = $settings.MaxRetries
@@ -81,9 +82,34 @@ function OnExchange($acct)
     return $rc
 }
 
+function send-compromisedresult($result, $status)
+{
+    $elem = $result.CreateElemtn("statusMsg")
+    $elem.InnerText = $status
+    $result.compromisedlogin.AppendChild($elem)
+    Send-ActiveMQMessage -Queue $queueResponseName -Message $result -Session $AMQSession
+}
+
 function process-compromised-message($xmlmsg)
 {
     $username = $xmlmsg.compromisedlogin.username
+
+    # Build a Result object
+    $result = [xml]"<compromisedLogin><messageType>response</messageType></compromisedLogin>"
+    # Create a username element
+    $elem = $result.CreateElement("username")
+    $elem.InnerText = $username
+    # Add the element to the XML object
+    $result.compromisedlogin.AppendChild($elem)
+    # Repeat for serial #
+    $elem = $result.CreateElement("serial")
+    $elem.InnerText = $xmlmsg.compromisedlogin.serial
+    $result.compromisedlogin.AppendChild($elem)
+    # And for app Name
+    $elem = $result.CreateElement("application")
+    $elem.InnerText = "Exchange"
+    $result.compromisedlogin.AppendChild($elem)
+
 
     try {
         $rc = OnExchange($username)
@@ -96,6 +122,7 @@ function process-compromised-message($xmlmsg)
     if (-Not $rc)
     {
         Write-Log "Skipping Compromised Account $username. Not a member of $ExchangeUsersListPrimary or $ExchangeUsersListSecondary"
+        send-compromisedresult($result "Skipping $username. Not on Exchange")
         return 1
     }
 
@@ -121,6 +148,7 @@ function process-compromised-message($xmlmsg)
     catch {
         # Nope
         Write-Log "No mailbox found for $scopedusername. Skipping"
+        send-compromisedresult($result "No mailbox found for $username. Skipping")
         return 1
     }
 
@@ -140,7 +168,7 @@ function process-compromised-message($xmlmsg)
     # Disable all rules
     try {
         $rules = Get-InboxRule -Mailbox $scopedusername | where {$_.Enabled}
-        $result = $rules.Count + " rules disabled. "
+        $response = $rules.Count + " rules disabled. "
         $rules | Disable-InboxRule
     }
     catch {
@@ -152,7 +180,7 @@ function process-compromised-message($xmlmsg)
         Set-MailboxMessageConfiguration $scopedusername -SignatureHTML "" -SignatureText ""
     }
     catch {
-        $result = $result + "Error clearing signatures: $_ . "
+        $response = $response + "Error clearing signatures: $_ . "
     }
 
     # Ensure mail isn't being forwarded
@@ -160,18 +188,14 @@ function process-compromised-message($xmlmsg)
     {
         try {
             Set-Mailbox $scopedusername -DeliverToMailboxAndForward $false -ForwardingSMTPAddress ""
-            $result = $result + "Forwarding cleared from $($mailbox.ForwardingSMTPAddress). "
+            $response = $response + "Forwarding cleared from $($mailbox.ForwardingSMTPAddress). "
         }
         catch {
-            $result = $result + "Error clearing forwarding: $_ . "
+            $response = $response + "Error clearing forwarding: $_ . "
         }
     }
 
-
-    # TODO
-    # We should give each Compromised Mesage a unique identifier and 
-    # generate a reply ActiveMQ status message indicating what was done for that identifier.
-    # That's Phase 2
+    send-compromisedresult($result $response)
 
     return 1
 }
