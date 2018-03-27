@@ -141,13 +141,16 @@ foreach ($u in $users)
 
     $AllowConflicts = ($u.autodeclineifbusy -eq "false")
 
-    # Should we auto-accept meeting requests if not busy? Default is Yes
+    # Should we auto-accept meeting requests if not busy? Default is Yes 
+    # (in which case, also don't forward invites to delegate)
+    $ForwardRequests = $false
     $AutomateProcessing = "AutoAccept"
     if ($u.autoacceptdecline -eq "false")
     {
         # If set to False in Zimbra, set to "AutoUpdate" in Exchange, which means
         # "Process meeting Updates but don't auto-process new meeting requests"
         $AutomateProcessing = "AutoUpdate"
+        $ForwardRequests = $true
     }
 
     if ($PassiveMode)
@@ -157,7 +160,13 @@ foreach ($u in $users)
     else 
     {
         try {
-            Set-CalendarProcessing -Identity $scopedacct -AutomateProcessing $AutomateProcessing -AllowConflicts $AllowConflicts -ErrorAction Stop
+            Set-CalendarProcessing -Identity $scopedacct -AutomateProcessing $AutomateProcessing `
+                 -AllowConflicts $AllowConflicts -ConflictPercentageAllowed 99 -MaximumConflictInstances 1000 `
+                 -DeleteComments $False -DeleteSubject $False `
+                 -ForwardRequestsToDelegates $ForwardRequests
+                 -ErrorAction Stop 
+            # By default, users can only see Resource account's free/busy status
+            Set-MailboxFolderPermission $scopedacct:\Calendar –User “Default”  -AccessRights AvailabilityOnly
         }
         catch 
         {
