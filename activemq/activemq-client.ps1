@@ -461,7 +461,7 @@ function process-amaint-message($xmlmsg)
         else 
         {
             $primaryemail = $username + "_disabled@sfu.ca"
-            $scopedaddresses += primaryemail
+            $scopedaddresses += $primaryemail
         }
 
         try {
