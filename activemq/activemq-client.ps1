@@ -84,7 +84,7 @@ function OnExchange($acct)
 
 function send-compromisedresult($result, $status)
 {
-    $elem = $result.CreateElemtn("statusMsg")
+    $elem = $result.CreateElement("statusMsg")
     $elem.InnerText = $status
     $result.compromisedlogin.AppendChild($elem)
     Send-ActiveMQMessage -Queue $queueResponseName -Message $result -Session $AMQSession
@@ -436,7 +436,7 @@ function process-amaint-message($xmlmsg)
         else 
         {
             $primaryemail = $username + "_disabled@sfu.ca"
-            $scopedaddresses += primaryemail
+            $scopedaddresses += $primaryemail
         }
 
         try {
