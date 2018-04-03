@@ -98,12 +98,12 @@ try {
         {
             # For testing..
             $Cred = Get-Credential
-            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos -Credential $Cred
+            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos -Credential $Cred -AllowClobber
         }
         else
         {
             # Prod
-            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos
+            $ESession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $e_uri  -Authentication Kerberos -AllowClobber
         }
         # If the Import fails, it's probably just because the cmdlets have already been imported
         import-pssession $ESession -AllowClobber
