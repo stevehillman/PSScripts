@@ -125,6 +125,8 @@ else
     $users = Get-AOBRestMaillistMembers -Maillist $Name -AuthToken $RestToken     
 }
 
+$FailedUsers = @()
+
 foreach ($u in $users)
 {
     if ($u -Match "@")
@@ -134,7 +136,14 @@ foreach ($u in $users)
     }
     if ($Name -ne "All")
     {
-        $uad = Get-ADUser $u 
+        try {
+            $uad = Get-ADUser $u
+        }
+        catch {
+            Write-Log "Error: $u does not exist in AD. Skipping"
+            $FailedUsers += $u
+            Continue
+        }
         $u = $uad
         Write-host "Processing $u"
     }
@@ -235,4 +244,10 @@ foreach ($u in $users)
     else {
         Write-Log "WARNING: No quota found for $($u.SamAccountName)"
     }
+}
+
+if ($FailedUsers.count -gt 0)
+{
+    Write-Host "The following users were not found in AD and not added to Exchange"
+    $FailedUsers
 }
