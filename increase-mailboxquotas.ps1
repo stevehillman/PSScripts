@@ -239,11 +239,11 @@ ForEach ($list in $mailboxesToProcess)
             if ($PassiveMode)
             {
                 Write-Host "PassiveMode: Send-MailMessage -From `"postmast@sfu.ca`" -To $userid -Subject `"Your SFU Mail account quota has been automatically increased`" `
-                        -SmtpServer $SmtpServer -Body `"$msgBody`""
+                        -SmtpServer $SmtpServer -Body `"$outboundmsg`""
             }
             else {
                 Send-MailMessage -From "postmast@sfu.ca" -To $userid -Subject `"Your SFU Mail account quota has been automatically increased`" `
-                        -SmtpServer $SmtpServer -Body $msgBody
+                        -SmtpServer $SmtpServer -Body $outboundmsg
             }
 
         }
