@@ -109,7 +109,7 @@ $WarnedUsers = @()
 
 ForEach ($list in $mailboxesToProcess)
 {
-    $users = Get-AOBRestMaillistMembers -Maillist $Name -AuthToken $RestToken     
+    $users = Get-AOBRestMaillistMembers -Maillist $list -AuthToken $RestToken     
 
     foreach ($u in $users)
     {
@@ -174,7 +174,7 @@ ForEach ($list in $mailboxesToProcess)
             $mbstats = Get-MailboxStatistics -Identity $userid -ErrorAction Stop
         }
         catch {
-            Write-Log "Error getting mailbox size for $userid: $_"
+            Write-Log "Error getting mailbox size for $userid : $_"
             Continue
         }
 
@@ -184,9 +184,13 @@ ForEach ($list in $mailboxesToProcess)
             $size = $Matches[1]
             $size = $size/1
         }
+        else {
+            # less than 1gb, round to 1 for comparison (which will never fail)
+            $size = 1
+        }
 
         # See if any change is needed
-        if ($size -gt ($oldquota * $quotaThresholdPct))
+        if ($size -gt (($oldquota * $quotaThresholdPct)/100)
         {
             $sendwarning = $false
             $newquota = $oldquota + 1
