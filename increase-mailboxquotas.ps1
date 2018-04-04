@@ -235,15 +235,15 @@ ForEach ($list in $mailboxesToProcess)
             }
 
             $outboundmsg += $Body2Msg
+            $msgSubj = "Your SFU Mail account quota has been automatically increased"
 
             if ($PassiveMode)
             {
-                Write-Host "PassiveMode: Send-MailMessage -From `"postmast@sfu.ca`" -To $userid -Subject `"Your SFU Mail account quota has been automatically increased`" `
+                Write-Host "PassiveMode: Send-MailMessage -From `"postmast@sfu.ca`" -To $userid -Subject $msgSubj `
                         -SmtpServer $SmtpServer -Body `"$outboundmsg`""
             }
             else {
-                Send-MailMessage -From "postmast@sfu.ca" -To $userid -Subject `"Your SFU Mail account quota has been automatically increased`" `
-                        -SmtpServer $SmtpServer -Body $outboundmsg
+                Send-MailMessage -From "postmast@sfu.ca" -To $userid -Subject $msgSubj -SmtpServer $SmtpServer -Body $outboundmsg
             }
 
         }
@@ -259,5 +259,7 @@ if ($BumpedUsers.count -gt 0)
         $msgBody += $WarnedUsers -join "`n"
     }
 
-    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Results of Increase-MailboxQuota Script" -SmtpServer $SmtpServer -Body $msgBody
+    $msgSubj = "Results of Increase-MailboxQuota Script"
+
+    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject $msgSubj -SmtpServer $SmtpServer -Body $msgBody
 }
