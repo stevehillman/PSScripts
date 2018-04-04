@@ -224,9 +224,9 @@ ForEach ($list in $mailboxesToProcess)
                 }
             }
 
-            $status = "$userid - Old Quota: $oldquota GB. New Quota: $newquota GB"
+            $status = "$userid - Usage: $size GB. Old Quota: $oldquota GB. New Quota: $newquota GB"
             $BumpedUsers += $status
-            $outboundmsg = $Body1Msg + "`r`n" + $status + "`r`n"
+            $outboundmsg = $Body1Msg + "`r`n`r`n" + $status + "`r`n`r`n"
 
             if ($sendwarning)
             {
