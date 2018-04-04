@@ -190,7 +190,7 @@ ForEach ($list in $mailboxesToProcess)
         }
 
         # See if any change is needed
-        if ($size -gt (($oldquota * $quotaThresholdPct)/100)
+        if ($size -gt (($oldquota * $quotaThresholdPct)/100))
         {
             $sendwarning = $false
             $newquota = $oldquota + 1
