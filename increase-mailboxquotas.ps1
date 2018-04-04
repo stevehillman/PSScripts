@@ -158,7 +158,7 @@ ForEach ($list in $mailboxesToProcess)
         
         # get current quota
         $oldquota = $mb.IssueWarningQuota
-        if ($oldquota -match "(\d+) GB")
+        if ($oldquota -match "([\d\.]+) GB")
         {
             $oldquota = $Matches[1]
             $oldquota = $oldquota/1 # Force to Int
@@ -179,7 +179,7 @@ ForEach ($list in $mailboxesToProcess)
         }
 
         $size = $mbstats.TotalItemSize
-        if ($size -match "(\d+) GB")
+        if ($size -match "([\d\.]+) GB")
         {
             $size = $Matches[1]
             $size = $size/1
