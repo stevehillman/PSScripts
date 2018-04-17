@@ -163,7 +163,7 @@ foreach ($u in $users)
             Set-CalendarProcessing -Identity $scopedacct -AutomateProcessing $AutomateProcessing `
                  -AllowConflicts $AllowConflicts -ConflictPercentageAllowed 99 -MaximumConflictInstances 1000 `
                  -DeleteComments $False -DeleteSubject $False `
-                 -ForwardRequestsToDelegates $ForwardRequests
+                 -ForwardRequestsToDelegates $ForwardRequests `
                  -ErrorAction Stop 
             # By default, users can only see Resource account's free/busy status
             Set-MailboxFolderPermission ${scopedacct}:\Calendar –User “Default”  -AccessRights AvailabilityOnly
