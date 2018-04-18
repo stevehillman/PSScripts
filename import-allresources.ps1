@@ -167,7 +167,7 @@ foreach ($u in $users)
                  -ErrorAction Stop 
             # By default, users can only see Resource account's free/busy status
             $myfolder = "$($scopedacct):\Calendar"
-            Set-MailboxFolderPermission -Identity $myfolder –User “Default”  -AccessRights AvailabilityOnly
+            Set-MailboxFolderPermission -Identity $myfolder –User "Default"  -AccessRights AvailabilityOnly
         }
         catch 
         {
