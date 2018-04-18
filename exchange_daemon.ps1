@@ -280,7 +280,7 @@ try {
                                     -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                                     -EmailAddresses $ScopedAddresses -ErrorAction Stop
                         Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
-                        Set-CASMailbox $scopedusername -ActiveSyncEnabled $true -ErrorAction Stop
+                        Set-CASMailbox $scopedusername -ActiveSyncEnabled $true -OWAEnabled $true -ErrorAction Stop
                         Write-Log "Enabled mailbox for $username"
                         $Resp = "ok. Mailbox enabled"
 
@@ -309,7 +309,7 @@ try {
                     Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $true `
                                 -EmailAddressPolicyEnabled $false `
                                 -EmailAddresses "SMTP:$($username)+sfu_connect@sfu.ca" -ErrorAction Stop
-                    Set-CASMailbox $scopedusername -ActiveSyncEnabled $false -ErrorAction Stop
+                    Set-CASMailbox $scopedusername -ActiveSyncEnabled $false -OWAEnabled $false -ErrorAction Stop
             
                     $Resp = "ok. Mailbox disabled"
                 }
