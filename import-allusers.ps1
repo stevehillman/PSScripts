@@ -196,13 +196,17 @@ foreach ($u in $users)
                 # This last command adds mailbox permissions necessary for the 'imapsync' command to create folder structure. Access can be revoked
                 # as soon as that step is done.
                 $junk = Add-MailboxPermission -Identity $userid -User hillman@sfu.ca -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
-                Set-MailboxMessageConfiguration $userid -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
-
                 Write-Log "Created mailbox for $($u.SamAccountName)"
             }
             catch
             {
                 Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
+            }
+            try {
+                Set-MailboxMessageConfiguration $userid -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+            }
+            catch {
+                Write-Log "Failed to set OWA settings for $userid"
             }
         }
     }
