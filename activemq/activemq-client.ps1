@@ -36,7 +36,7 @@ function load-settings($s_file)
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
     $global:AddNewUsersDate = $settings.AddNewUsersDate
-    $global:AddAllUsersDate = $settings.AllAllUsersDate
+    $global:AddAllUsersDate = $settings.AddAllUsersDate
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
     $global:SubDomains = $settings.SubDomains
     $global:SubscribeURL = $settings.SubscribeURL
@@ -56,7 +56,7 @@ function Load-ConnectUsers()
     if ($ConnectUsersDate -lt $now -and (Test-Path $ConnectUsersFile))
     {
         $global:ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
-        $ConnectUsersDate = $now
+        $global:ConnectUsersDate = $now
         Write-Log "Imported $($ConnectUsers.PSObject.Properties.Name.Count) users from $ConnectUsersFile"
     }
 }
@@ -508,6 +508,7 @@ function process-amaint-message($xmlmsg)
             return 0
         }
     }
+    Write-Log "Got here. Returning Success"
 
     return 1
 }
