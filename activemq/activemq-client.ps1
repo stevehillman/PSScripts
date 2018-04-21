@@ -306,6 +306,13 @@ function process-amaint-message($xmlmsg)
                  Write-Log $LastError
                  return 0
             }
+#            try {
+#                Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+#            }
+#            catch {
+#                Write-Log "Unable to set default OWA settings for $scopedusername, but safe to continue"
+#            }
+
             if ($AddToMaillist)
             {
                 try {
@@ -476,8 +483,9 @@ function process-amaint-message($xmlmsg)
                             -EmailAddresses $ScopedAddresses `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
-                Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
                 Write-Log "Updated mailbox for ${scopedusername}. HideInGal: $hideInGal. Aliases: $ScopedAddresses"
+                Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+
             }
 
             if ($mbenabled -ne $casmb.OWAEnabled)
@@ -659,7 +667,8 @@ while(1)
         $noactivity=0
 
         if (-Not $isRetry) { Write-Log "Processing msg `r`n $($msg.InnerXml)" }
-        if (process-message($msg))
+        $rc = process-message($msg)
+        if ($rc -gt 0)
         {
             Write-Log "Success"
             $rc = $Message.Acknowledge()
