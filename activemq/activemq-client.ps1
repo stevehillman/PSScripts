@@ -44,7 +44,7 @@ function load-settings($s_file)
     $global:AddAllUsers = $false
 }
 
-$ConnectUsersDate = "00000000"
+$global:ConnectUsersDate = "00000000"
 
 
 # Load in the list of current Connect Users once a day. Relies on an external process
@@ -54,7 +54,7 @@ function Load-ConnectUsers()
     $global:now = Get-Date -Format FileDate
     Write-Log "now: $now"
     
-    if ($ConnectUsersDate -lt $now -and (Test-Path $ConnectUsersFile))
+    if ($global:ConnectUsersDate -lt $now -and (Test-Path $ConnectUsersFile))
     {
         Write-Log "ConnectUsersDate: $ConnectUsersDate, now: $now"
         $global:ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
