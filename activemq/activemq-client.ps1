@@ -52,9 +52,11 @@ $ConnectUsersDate = "00000000"
 function Load-ConnectUsers()
 {
     $global:now = Get-Date -Format FileDate
+    Write-Log "now: $now"
     
     if ($ConnectUsersDate -lt $now -and (Test-Path $ConnectUsersFile))
     {
+        Write-Log "ConnectUsersDate: $ConnectUsersDate, now: $now"
         $global:ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
         $global:ConnectUsersDate = $now
         Write-Log "Imported $($ConnectUsers.PSObject.Properties.Name.Count) users from $ConnectUsersFile"
