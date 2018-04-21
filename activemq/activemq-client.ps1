@@ -670,6 +670,7 @@ while(1)
 
         if (-Not $isRetry) { Write-Log "Processing msg `r`n $($msg.InnerXml)" }
         $rc = process-message($msg)
+        Write-Log "RC = $rc"
         if ($rc -gt 0)
         {
             Write-Log "Success"
