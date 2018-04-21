@@ -299,7 +299,7 @@ function process-amaint-message($xmlmsg)
         else 
         {
             try {
-                Enable-Mailbox -Identity $scopedusername -ErrorAction Stop
+                $junk = Enable-Mailbox -Identity $scopedusername -ErrorAction Stop
                 $mb = Get-Mailbox $scopedusername -ErrorAction Stop
             }
             catch {
@@ -318,7 +318,7 @@ function process-amaint-message($xmlmsg)
             if ($AddToMaillist)
             {
                 try {
-                    Add-UserToMaillist $username $ExchangeUsersListPrimary
+                    $junk = Add-UserToMaillist $username $ExchangeUsersListPrimary
                 }
                 catch {
                     # If the user doesn't get added to the previous list, they won't get email in the new environment from anywhere but inside Exchange.
@@ -330,7 +330,7 @@ function process-amaint-message($xmlmsg)
             if ($AddToLightweightMigrations)
             {
                 try {
-                    Add-UserToMaillist $username "lightweight-migrations" 
+                    $junk = Add-UserToMaillist $username "lightweight-migrations" 
                     Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Lightweight acct $username converted to Exchange" `
                     -SmtpServer $SmtpServer -Body "Make sure their SFUConnect data gets migrated."
                 }
@@ -480,13 +480,13 @@ function process-amaint-message($xmlmsg)
             }
             else 
             {
-                Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $hideInGal `
+                $junk = Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $hideInGal `
                             -EmailAddressPolicyEnabled $false `
                             -EmailAddresses $ScopedAddresses `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
                 Write-Log "Updated mailbox for ${scopedusername}. HideInGal: $hideInGal. Aliases: $ScopedAddresses"
-                Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+                $junk = Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
 
             }
 
@@ -499,8 +499,8 @@ function process-amaint-message($xmlmsg)
                 else 
                 {    
                     Write-Log "Setting Account-Enabled state to $mbenabled"
-                    Set-Mailbox -Identity $scopedusername -PrimarySmtpAddress $primaryemail -ErrorAction Stop
-                    Set-CASMailbox $scopedusername -ActiveSyncEnabled $mbenabled `
+                    $junk = Set-Mailbox -Identity $scopedusername -PrimarySmtpAddress $primaryemail -ErrorAction Stop
+                    $junk = Set-CASMailbox $scopedusername -ActiveSyncEnabled $mbenabled `
                                         -ImapEnabled $mbenabled `
                                         -EwsEnabled $mbenabled `
                                         -MAPIEnabled $mbenabled `
