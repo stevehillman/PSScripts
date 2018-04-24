@@ -79,6 +79,7 @@ function Add-UserToMaillist($u,$l)
     }
     catch {
         # REST call failed. Bad news
+        Write-Log "Failed to add $u to $l : $_"
         Throw "Failed to add member to list"
     }
     if ($result -match "^ok")

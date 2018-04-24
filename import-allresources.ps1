@@ -177,34 +177,39 @@ foreach ($u in $users)
 
 
     # Regardless of whether we just created the account, see if the permissions need updating
-    $owner = $u.owner
-    if ($owner -notmatch "@sfu.ca")
+    $owners = $u.owner
+    
+    $owners -split "," | ForEach
     {
-        $owner += "@sfu.ca"
-    }
-    try {
-        $mb = Get-Mailbox $owner -ErrorAction Stop
-    }
-    catch {
-        Write-Log "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
-        Write-Host "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
-        Continue
-    }
-    if ($PassiveMode)
-    {
-        Write-Log "PassiveMode: Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All"
-        Write-Log "PassiveMode: Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner"
-    }
-    else 
-    {
-        try 
+        $owner = $_
+        if ($owner -notmatch "@sfu.ca")
         {
-            Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
-            Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner -ErrorAction Stop
+            $owner += "@sfu.ca"
         }
-        catch 
+        try {
+            $mb = Get-Mailbox $owner -ErrorAction Stop
+        }
+        catch {
+            Write-Log "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
+            Write-Host "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
+            Continue
+        }
+        if ($PassiveMode)
         {
-            Write-Log "There was a problem granting $owner access to $scopedacct : $_"
-        }    
+            Write-Log "PassiveMode: Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All"
+            Write-Log "PassiveMode: Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner"
+        }
+        else 
+        {
+            try 
+            {
+                Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
+                Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner -ErrorAction Stop
+            }
+            catch 
+            {
+                Write-Log "There was a problem granting $owner access to $scopedacct : $_"
+            }    
+        }
     }
 }
