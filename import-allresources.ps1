@@ -178,6 +178,22 @@ foreach ($u in $users)
 
     # Regardless of whether we just created the account, see if the permissions need updating
     $owners = $u.owner
+
+    if ($PassiveMode)
+    {
+        Write-Log "PassiveMode: Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owners"
+    }
+    else 
+    {
+        try 
+        {
+            Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner -ErrorAction Stop
+        }
+        catch 
+        {
+            Write-Log "There was a problem granting $owners ResourceDelegate access to $scopedacct : $_"
+        }    
+    }
     
     $owners -split "," | ForEach
     {
@@ -197,14 +213,12 @@ foreach ($u in $users)
         if ($PassiveMode)
         {
             Write-Log "PassiveMode: Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All"
-            Write-Log "PassiveMode: Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner"
         }
         else 
         {
             try 
             {
                 Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
-                Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner -ErrorAction Stop
             }
             catch 
             {
