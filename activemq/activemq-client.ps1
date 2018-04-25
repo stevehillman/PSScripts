@@ -286,6 +286,7 @@ function process-amaint-message($xmlmsg)
     {
         # TODO: We need to determine whether the user previously had an Exchange mailbox and
         # if so, use Connect-Mailbox to reconnect them, as Enable-Mailbox will always create a new mailbox.
+        # For now, we never disable a mailbox, we just disable access to it.
         Write-Log "Creating mailbox for $username"
         if ($PassiveMode)
         {
@@ -301,6 +302,7 @@ function process-amaint-message($xmlmsg)
         {
             try {
                 $junk = Enable-Mailbox -Identity $scopedusername -ErrorAction Stop
+                $junk = Set-CASMailbox $scopedusername -PopEnabled $false -ErrorAction Stop
                 $mb = Get-Mailbox $scopedusername -ErrorAction Stop
             }
             catch {
@@ -465,7 +467,10 @@ function process-amaint-message($xmlmsg)
                     # eliminate duplicates
                     continue
                 }
-                $ScopedAddresses += $Scopedaddr
+                if ($Scopedaddr -ne "@sfu.ca")
+                {
+                    $ScopedAddresses += $Scopedaddr
+                }
             }
         }
         else 
