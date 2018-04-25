@@ -79,6 +79,8 @@ function load-settings($s_file)
             }
         }
     }
+
+    $global:popusers = Get-Content C:\Users\hillman\popusers
 }
 
 function Write-Log($logmsg)
@@ -185,6 +187,7 @@ foreach ($u in $users)
             Write-Log "PassiveMode: Enable-mailbox -Identity $($u.SamAccountName)"
         }
         else {
+            $popenabled = $popusers -contains $u.SamAccountName
             try {
                 $junk = Enable-Mailbox -Identity $userid -ErrorAction Stop
                 Set-Mailbox -Identity $userid -HiddenFromAddressListsEnabled $true `
@@ -192,7 +195,7 @@ foreach ($u in $users)
                             -EmailAddresses "$($u.SamAccountName)+sfu_connect@sfu.ca" `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
-                Set-CASMailbox $userid -ActiveSyncEnabled $false -OWAEnabled $false -ErrorAction Stop
+                Set-CASMailbox $userid -ActiveSyncEnabled $false -OWAEnabled $false -PopEnabled $popenabled -ErrorAction Stop
                 # This last command adds mailbox permissions necessary for the 'imapsync' command to create folder structure. Access can be revoked
                 # as soon as that step is done.
                 $junk = Add-MailboxPermission -Identity $userid -User hillman@sfu.ca -AccessRights FullAccess -InheritanceType All -ErrorAction Stop

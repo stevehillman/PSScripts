@@ -506,9 +506,12 @@ function process-amaint-message($xmlmsg)
                                         -EwsEnabled $mbenabled `
                                         -MAPIEnabled $mbenabled `
                                         -OWAEnabled $mbenabled `
-                                        -PopEnabled $mbenabled `
                                         -OWAforDevicesEnabled $mbenabled `
                                         -ErrorAction Stop
+                    if (-not $mbenabled)
+                    {
+                        $junk = Set-CASMailbox $scopedusername -PopEnabled $false -ErrorAction Stop
+                    }
                 }
             }
             
