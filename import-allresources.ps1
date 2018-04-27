@@ -167,7 +167,17 @@ foreach ($u in $users)
                  -ErrorAction Stop 
             # By default, users can only see Resource account's free/busy status
             $myfolder = "$($scopedacct):\Calendar"
-            Set-MailboxFolderPermission -Identity $myfolder -User "Default" -AccessRights AvailabilityOnly
+            $junk = Get-MailboxFolderPermission -Identity $myfolder -User "Default"
+            if ($junk.AccessRights -notcontains "AvailabilityOnly")
+            {
+                Set-MailboxFolderPermission -Identity $myfolder -User "Default" -AccessRights AvailabilityOnly
+                $junk = Get-MailboxFolderPermission -Identity $myfolder -User "Default"
+                if ($junk.AccessRights -notcontains "AvailabilityOnly")
+                {
+                    Write-Log "Failed to change Default User rights on $scopedacct to AvailabilityOnly but no error generated!"
+                }
+            }
+
         }
         catch 
         {
@@ -217,7 +227,11 @@ foreach ($u in $users)
         {
             try 
             {
-                Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
+                $junk = Get-MailboxPermission -Identity $scopedacct -User $owner
+                if ($junk.AccessRights -notcontains "FullAccess")
+                {
+                    $junk = Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
+                }
             }
             catch 
             {
