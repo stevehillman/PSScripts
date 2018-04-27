@@ -177,7 +177,7 @@ foreach ($u in $users)
 
 
     # Regardless of whether we just created the account, see if the permissions need updating
-    $owners = $u.owner
+    $owners = $u.owner -replace "\s+"
 
     if ($PassiveMode)
     {
