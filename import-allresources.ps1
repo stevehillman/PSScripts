@@ -134,7 +134,7 @@ foreach ($u in $users)
             }
             catch
             {
-                Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
+                Write-Log "Failed to create mailbox for $scopedacct. $_"
             }
         }
     }
