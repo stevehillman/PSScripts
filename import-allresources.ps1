@@ -195,8 +195,7 @@ foreach ($u in $users)
         }    
     }
     
-    $owners -split "," | ForEach
-    {
+    $owners -split "," | ForEach {
         $owner = $_
         if ($owner -notmatch "@sfu.ca")
         {
