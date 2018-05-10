@@ -433,6 +433,8 @@ function process-amaint-message($xmlmsg)
     if ($update)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
+
+        # For that rare case when a user has specified a non-SFU PreferredEmail address in SFUDS
         if ($PreferredEmail -Notmatch "@.*sfu.ca")
         {
             # See if the domain of the PreferredEmail is whitelisted
@@ -441,6 +443,7 @@ function process-amaint-message($xmlmsg)
                 $domain = $Matches[1]
                 if ($ExternalDomains -notcontains $domain)
                 {
+                    Write-Log "User's PreferredEmail domain $domain is not whitelisted. Setting to default address"
                     $PreferredEmail = $username + "@sfu.ca"
                 }
                 else {
@@ -449,8 +452,6 @@ function process-amaint-message($xmlmsg)
             }
             else 
             {    
-                # For that rare case when a user has specified a non-SFU PreferredEmail address in SFUDS
-                Write-Log "User's PreferredEmail domain $domain is not whitelisted. Setting to default address"
                 $PreferredEmail = $username + "@sfu.ca"
             }
         }
