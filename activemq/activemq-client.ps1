@@ -207,6 +207,7 @@ function process-amaint-message($xmlmsg)
     $AddToLightweightMigrations = $false
 
     $scopedusername = $username + "@sfu.ca"
+    
     # See if the user already has an Exchange Mailbox
     try {
         $mb = Get-Mailbox $scopedusername -ErrorAction Stop
@@ -421,6 +422,26 @@ function process-amaint-message($xmlmsg)
             Write-Log "HideInGal state changed. Updating"
             $update = $true
         }
+
+        ## Check Display Name if appropriate
+        if ($roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other" -or [int]$xmlmsg.synclogin.person.sfuVisibility -gt 4)
+        {
+            $anondn = $false
+            if ($mb.DisplayName -ne $xmlmsg.synclogin.login.gcos)
+            {
+                Write-Log "DisplayName doesn't match. Updating"
+                $update = $true
+            }
+        }
+        else 
+        {
+            $anondn = $true
+            if ($mb.DisplayName -ne $username)
+            {
+                Write-Log "DisplayName is not anonymized and needs to be. Updating"
+                $update = $true
+            }
+        }
     }
 
     if ($AddNewUsers -and $mb.PrimarySmtpAddress -Match "\+sfu_connect")
@@ -493,6 +514,14 @@ function process-amaint-message($xmlmsg)
                     $ScopedAddresses += $Scopedaddr
                 }
             }
+            if ($anondn)
+            {
+                $DisplayName = $username
+            }
+            else 
+            {
+                $DisplayName = $xmlmsg.synclogin.login.gcos    
+            }
         }
         else 
         {
@@ -507,6 +536,11 @@ function process-amaint-message($xmlmsg)
             }
             else 
             {
+                # For testing
+                if ($username -eq "kipling")
+                {
+                    $junk = Set-Mailbox -Identity $scopedusername -DisplayName $DisplayName -ErrorAction Stop
+                }
                 $junk = Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $hideInGal `
                             -EmailAddressPolicyEnabled $false `
                             -EmailAddresses $ScopedAddresses `
