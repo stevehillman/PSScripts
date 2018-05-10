@@ -38,10 +38,14 @@ function load-settings($s_file)
     $global:AddNewUsersDate = $settings.AddNewUsersDate
     $global:AddAllUsersDate = $settings.AddAllUsersDate
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
-    $global:SubDomains = $settings.SubDomains
     $global:SubscribeURL = $settings.SubscribeURL
     $global:AddNewUsers = $false
     $global:AddAllUsers = $false
+
+    $global:ExternalDomains = @()
+    $settings.ExternalDomains | ForEach {
+        $global:ExternalDomains += $_
+    }
 }
 
 $global:ConnectUsersDate = "00000000"
@@ -431,8 +435,24 @@ function process-amaint-message($xmlmsg)
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
         if ($PreferredEmail -Notmatch "@.*sfu.ca")
         {
-            # For that rare case when a user has specified a non-SFU PreferredEmail address in SFUDS
-            $PreferredEmail = $username + "@sfu.ca"
+            # See if the domain of the PreferredEmail is whitelisted
+            if ($PreferredEmail -match "@(.*)")
+            {
+                $domain = $Matches[1]
+                if ($ExternalDomains -notcontains $domain)
+                {
+                    $PreferredEmail = $username + "@sfu.ca"
+                }
+                else {
+                    Write-Log "User's PreferredEmail domain $domain is whitelisted. Allowing it"
+                }
+            }
+            else 
+            {    
+                # For that rare case when a user has specified a non-SFU PreferredEmail address in SFUDS
+                Write-Log "User's PreferredEmail domain $domain is not whitelisted. Setting to default address"
+                $PreferredEmail = $username + "@sfu.ca"
+            }
         }
 
         $addresses = @($username) + @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)

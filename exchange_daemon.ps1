@@ -279,7 +279,6 @@ try {
                                     -EmailAddressPolicyEnabled $false `
                                     -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                                     -EmailAddresses $ScopedAddresses -ErrorAction Stop
-                        Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
                         Set-CASMailbox $scopedusername -ActiveSyncEnabled $true -OWAEnabled $true -ErrorAction Stop
                         Write-Log "Enabled mailbox for $username"
                         $Resp = "ok. Mailbox enabled"
@@ -288,6 +287,16 @@ try {
                     catch
                     {
                         Write-Log "Failed to create mailbox for $username . $_"
+                    }
+                    try 
+                    {
+                        # If we just created the mailbox, there's a good chance this command will fail. Since it's not critical
+                        # ignore it if it does
+                        Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+                    }
+                    catch 
+                    {
+                        Write-Log "Caught error trying to set OWA settings for $scopedusername. Ignoring"    
                     }
                 }
                 catch {
