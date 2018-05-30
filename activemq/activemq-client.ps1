@@ -361,14 +361,30 @@ function process-amaint-message($xmlmsg)
         }
     }
 
+    # Save for later comparisons
+    $PreferredEmail = $xmlmsg.synclogin.person.email
+
+    $AmaintAliases = @($xmlmsg.syncLogin.login.aliases.ChildNodes.InnerText)
+
+    # Determine whether we should omit user's aliases from Exchange. For most Student
+    # accounts, their alias is their name, which is personal information, so if we 
+    # limit their account info to just their account name, we minimize PII exposed in Exchange.
+    # The AD update scripts will ensure their names are masked if their sfuVisibility is < 5
+    $maskAliases = $false
+    if ($hideInGal -and [int]$xmlmsg.synclogin.person.sfuVisibility -lt 5)
+    {
+        $maskAliases = $true
+        $PreferredEmail = $scopedusername
+        $AmaintAliases = @()
+    }
+
+
+
     if ($mbenabled -ne $casmb.OWAEnabled)
     {
         Write-Log "Account status changed. Updating"
         $update=$true
     }
-
-    # Save for later comparisons
-    $PreferredEmail = $xmlmsg.synclogin.person.email
 
     # Check if the account needs updating
     if (! $update)
@@ -396,7 +412,7 @@ function process-amaint-message($xmlmsg)
         }   
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
         try {
-            if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($xmlmsg.syncLogin.login.aliases.ChildNodes.InnerText))
+            if (Compare-Object -ReferenceObject $aliases -DifferenceObject $AmaintAliases)
             {
                 Write-Log "Aliases have changed. Exchange had: $($aliases -join ','). Updating"
                 $update = $true
@@ -477,7 +493,7 @@ function process-amaint-message($xmlmsg)
             }
         }
 
-        $addresses = @($username) + @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
+        $addresses = @($username) + $AmaintAliases
         # $addresses will contain duplicates because PreferredEmail is always going to be one of the aliases or the username
         # We'll deal with that below
 
@@ -527,6 +543,7 @@ function process-amaint-message($xmlmsg)
         {
             $primaryemail = $username + "_disabled@sfu.ca"
             $scopedaddresses += $primaryemail
+            $DisplayName = $username
         }
 
         try {
