@@ -307,7 +307,7 @@ function process-amaint-message($xmlmsg)
         {
             try {
                 $junk = Enable-Mailbox -Identity $scopedusername -ErrorAction Stop
-                $junk = Set-CASMailbox $scopedusername -PopEnabled $false -ErrorAction Stop
+                $junk = Set-CASMailbox $scopedusername -PopEnabled $false -OwaMailboxPolicy "Default" -ErrorAction Stop
                 $mb = Get-Mailbox $scopedusername -ErrorAction Stop
             }
             catch {
