@@ -553,17 +553,13 @@ function process-amaint-message($xmlmsg)
             }
             else 
             {
-                # For testing
-                if ($username -eq "kipling")
-                {
-                    $junk = Set-Mailbox -Identity $scopedusername -DisplayName $DisplayName -ErrorAction Stop
-                }
                 $junk = Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $hideInGal `
                             -EmailAddressPolicyEnabled $false `
                             -EmailAddresses $ScopedAddresses `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
+                            -DisplayName $DisplayName `
                             -ErrorAction Stop
-                Write-Log "Updated mailbox for ${scopedusername}. HideInGal: $hideInGal. Aliases: $ScopedAddresses"
+                Write-Log "Updated mailbox for ${scopedusername}. HideInGal: $hideInGal. Aliases: $ScopedAddresses; DisplayName: $DisplayName"
                 $junk = Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
 
             }
