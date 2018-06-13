@@ -307,7 +307,7 @@ function process-amaint-message($xmlmsg)
         {
             try {
                 $junk = Enable-Mailbox -Identity $scopedusername -ErrorAction Stop
-                $junk = Set-CASMailbox $scopedusername -PopEnabled $false -ErrorAction Stop
+                $junk = Set-CASMailbox $scopedusername -PopEnabled $false -OwaMailboxPolicy "Default" -ErrorAction Stop
                 $mb = Get-Mailbox $scopedusername -ErrorAction Stop
             }
             catch {
@@ -607,6 +607,7 @@ function process-amaint-message($xmlmsg)
 function retry-message($m)
 {
     [xml]$mtmp = $m.Text
+    $firstRetry = $false
     # Add a retry counter if one isn't already there
     if (! $mtmp.retryMessage.count)
     {
@@ -619,6 +620,10 @@ function retry-message($m)
     else
     {
         $count = [int]$mtmp.retryMessage.count
+        if ($count -eq 1)
+        {
+            $firstRetry = $true
+        }
         $count++
         $mtmp.retryMessage.count = "$count"
     }
@@ -631,6 +636,10 @@ function retry-message($m)
 
     Send-ActiveMQMessage -Queue $retryQueueName -Session $AMQSession -Message $mtmp
 
+    if ($firstRetry)
+    {
+        return 2
+    }
     return 1
 
 }
@@ -769,6 +778,14 @@ while(1)
             }
             Write-Log "Failure. Will Retry"
             $rc = retry-message($Message)
+
+            if ($rc -eq 2)
+            {
+                # Special case: The first time processing a msg in the retry queue, if it fails, treat it as a success
+                # for the purposes of calculating the backoff, so that if there are messages queued behind it, we get
+                # through them all quickly.
+                $retryFailures = 0
+            }
             # Even if retry-message exceeds max retries, we still have to Acknowledge msg to clear it from the queue
             $Message.Acknowledge()
             if ($rc -eq 0)

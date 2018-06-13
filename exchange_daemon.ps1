@@ -279,7 +279,7 @@ try {
                                     -EmailAddressPolicyEnabled $false `
                                     -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                                     -EmailAddresses $ScopedAddresses -ErrorAction Stop
-                        Set-CASMailbox $scopedusername -ActiveSyncEnabled $true -OWAEnabled $true -ErrorAction Stop
+                        Set-CASMailbox $scopedusername -ActiveSyncEnabled $true -OWAEnabled $true  -OwaMailboxPolicy "Default" -ErrorAction Stop
                         Write-Log "Enabled mailbox for $username"
                         $Resp = "ok. Mailbox enabled"
 
