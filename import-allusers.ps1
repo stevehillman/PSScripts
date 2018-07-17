@@ -2,11 +2,12 @@
 .SYNOPSIS
     Import AD users into Exchange
 .DESCRIPTION
-    Import all members of a maillist into Exchange from AD. This is meant as a one-time import
+    Import all members of a maillist or file into Exchange from AD. This is meant as a one-time import
     but for each user, it checks whether they have a mailbox before creating one
 .PARAMETER Name
-    Name of the maillist to use to determine which users to import. Use "All" to import all users. If importing all users,
-    the OU listed in the settings.json is used as the source of users
+    Name of the maillist or file to use to determine which users to import. Use "All" to import all users. 
+    To specify a file, specify a full path (with '\'s) to differentiate it from a maillist name
+    If importing all users, the OU listed in the settings.json is used as the source of users
 #>
 
 # Force user to provide either a listname or "all"
@@ -122,7 +123,11 @@ if ($Name -eq "All")
 {
     $users = GET-ADUser -Filter '*' -Searchbase $UsersOU
 }
-else 
+else if ($Name -match "\\")
+{
+    $users = Get-Content $Name
+}
+else
 {
     $users = Get-AOBRestMaillistMembers -Maillist $Name -AuthToken $RestToken     
 }
