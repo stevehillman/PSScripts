@@ -123,7 +123,7 @@ if ($Name -eq "All")
 {
     $users = GET-ADUser -Filter '*' -Searchbase $UsersOU
 }
-else if ($Name -match "\\")
+elseif ($Name -match "\\")
 {
     $users = Get-Content $Name
 }
