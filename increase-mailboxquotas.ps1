@@ -209,6 +209,13 @@ ForEach ($list in $mailboxesToProcess)
                 $sendwarning = $true
             }
 
+            # Just in case it's been awhile since we ran, and the user needs
+            # several quota bumps to get above threshold, do them all at once
+            while ($size -gt (($newquota * $quotaThresholdPct)/100))
+            {
+                $newquota++
+            }
+
             if ($PassiveMode)
             {
                 Write-Host "PassiveMode: Set-Mailbox $userid -IssueWarningQuota $($newquota * $GB) -ProhibitSendQuota $(($newquota+1)*$GB) -ProhibitSendReceiveQuota $(($newquota+2)*$GB)"
