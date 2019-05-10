@@ -134,20 +134,23 @@ foreach ($u in $users)
             }
             catch
             {
-                Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
+                Write-Log "Failed to create mailbox for $scopedacct. $_"
             }
         }
     }
 
     $AllowConflicts = ($u.autodeclineifbusy -eq "false")
 
-    # Should we auto-accept meeting requests if not busy? Default is Yes
+    # Should we auto-accept meeting requests if not busy? Default is Yes 
+    # (in which case, also don't forward invites to delegate)
+    $ForwardRequests = $false
     $AutomateProcessing = "AutoAccept"
     if ($u.autoacceptdecline -eq "false")
     {
         # If set to False in Zimbra, set to "AutoUpdate" in Exchange, which means
         # "Process meeting Updates but don't auto-process new meeting requests"
         $AutomateProcessing = "AutoUpdate"
+        $ForwardRequests = $true
     }
 
     if ($PassiveMode)
@@ -157,7 +160,24 @@ foreach ($u in $users)
     else 
     {
         try {
-            Set-CalendarProcessing -Identity $scopedacct -AutomateProcessing $AutomateProcessing -AllowConflicts $AllowConflicts -ErrorAction Stop
+            Set-CalendarProcessing -Identity $scopedacct -AutomateProcessing $AutomateProcessing `
+                 -AllowConflicts $AllowConflicts -ConflictPercentageAllowed 99 -MaximumConflictInstances 1000 `
+                 -DeleteComments $False -DeleteSubject $False `
+                 -ForwardRequestsToDelegates $ForwardRequests `
+                 -ErrorAction Stop 
+            # By default, users can only see Resource account's free/busy status
+            $myfolder = "$($scopedacct):\Calendar"
+            $junk = Get-MailboxFolderPermission -Identity $myfolder -User "Default"
+            if ($junk.AccessRights -notcontains "AvailabilityOnly")
+            {
+                Set-MailboxFolderPermission -Identity $myfolder -User "Default" -AccessRights AvailabilityOnly
+                $junk = Get-MailboxFolderPermission -Identity $myfolder -User "Default"
+                if ($junk.AccessRights -notcontains "AvailabilityOnly")
+                {
+                    Write-Log "Failed to change Default User rights on $scopedacct to AvailabilityOnly but no error generated!"
+                }
+            }
+
         }
         catch 
         {
@@ -167,34 +187,56 @@ foreach ($u in $users)
 
 
     # Regardless of whether we just created the account, see if the permissions need updating
-    $owner = $u.owner
-    if ($owner -notmatch "@sfu.ca")
-    {
-        $owner += "@sfu.ca"
-    }
-    try {
-        $mb = Get-Mailbox $owner -ErrorAction Stop
-    }
-    catch {
-        Write-Log "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
-        Write-Host "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
-        Continue
-    }
+    $owners = $u.owner -replace "\s+"
+
     if ($PassiveMode)
     {
-        Write-Log "PassiveMode: Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All"
-        Write-Log "PassiveMode: Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner"
+        Write-Log "PassiveMode: Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owners"
     }
     else 
     {
         try 
         {
-            Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
             Set-CalendarProcessing -Identity $scopedacct -ResourceDelegates $owner -ErrorAction Stop
         }
         catch 
         {
-            Write-Log "There was a problem granting $owner access to $scopedacct : $_"
+            Write-Log "There was a problem granting $owners ResourceDelegate access to $scopedacct : $_"
         }    
+    }
+    
+    $owners -split "," | ForEach {
+        $owner = $_
+        if ($owner -notmatch "@sfu.ca")
+        {
+            $owner += "@sfu.ca"
+        }
+        try {
+            $mb = Get-Mailbox $owner -ErrorAction Stop
+        }
+        catch {
+            Write-Log "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
+            Write-Host "Warning: $acct owner $owner not found in Exchange. Not assigning permissions"
+            Continue
+        }
+        if ($PassiveMode)
+        {
+            Write-Log "PassiveMode: Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All"
+        }
+        else 
+        {
+            try 
+            {
+                $junk = Get-MailboxPermission -Identity $scopedacct -User $owner
+                if ($junk.AccessRights -notcontains "FullAccess")
+                {
+                    $junk = Add-MailboxPermission -Identity $scopedacct -User $owner -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
+                }
+            }
+            catch 
+            {
+                Write-Log "There was a problem granting $owner access to $scopedacct : $_"
+            }    
+        }
     }
 }

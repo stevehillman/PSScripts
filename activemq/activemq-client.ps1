@@ -12,6 +12,7 @@ Import-Module -Name PSAOBRestClient
 $me = $env:username
 $LogFile = "C:\Users\$me\activemq_client.log"
 $SettingsFile = "C:\Users\$me\settings.json"
+$ConnectUsersFile = "C:\Users\$me\ConnectUsers.json"
 
 
 ## Local private functions ##
@@ -35,9 +36,36 @@ function load-settings($s_file)
     $global:ErrorsToEmail = $settings.ErrorsToEmail
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
-    $global:AddNewUsers = ($settings.AddNewUsers -eq "true")
+    $global:AddNewUsersDate = $settings.AddNewUsersDate
+    $global:AddAllUsersDate = $settings.AddAllUsersDate
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
-    $global:SubDomains = $settings.SubDomains
+    $global:SubscribeURL = $settings.SubscribeURL
+    $global:AddNewUsers = $false
+    $global:AddAllUsers = $false
+
+    $global:ExternalDomains = @()
+    $settings.ExternalDomains | ForEach {
+        $global:ExternalDomains += $_
+    }
+}
+
+$global:ConnectUsersDate = "00000000"
+
+
+# Load in the list of current Connect Users once a day. Relies on an external process
+# to update the contents of the ConnectUsers file.
+function Load-ConnectUsers()
+{
+    $global:now = Get-Date -Format FileDate
+    Write-Log "now: $now"
+    
+    if ($global:ConnectUsersDate -lt $now -and (Test-Path $ConnectUsersFile))
+    {
+        Write-Log "ConnectUsersDate: $ConnectUsersDate, now: $now"
+        $global:ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
+        $global:ConnectUsersDate = $now
+        Write-Log "Imported $($ConnectUsers.PSObject.Properties.Name.Count) users from $ConnectUsersFile"
+    }
 }
 
 function Write-Log($logmsg)
@@ -45,10 +73,57 @@ function Write-Log($logmsg)
     Add-Content $LogFile "$(date) : $logmsg"
 }
 
+# Add user to a maillist.
+# Returns $true on success, $false if they're already a member.
+# Throws an exception if any other error occurred.
+function Add-UserToMaillist($u,$l)
+{
+    $url = $SubscribeURL + $l + "&address=" + $u
+    try {
+        $result = Invoke-RestMethod -Method "GET" -Uri $url -ErrorAction 'Stop'
+    }
+    catch {
+        # REST call failed. Bad news
+        Write-Log "Failed to add $u to $l : $_"
+        Throw "Failed to add member to list"
+    }
+    if ($result -match "^ok")
+    {
+        return $true
+    } 
+    elseif ($result -match "already a member")
+    {
+        return $false
+    }
+    else
+    {
+        # Something else went wrong
+        Throw $result
+    }
+}
+
 function process-message($xmlmsg)
 {
     if ($msg.synclogin)
     {
+        $global:now = Get-Date -Format FileDate
+        if (-Not $AddNewUsers)
+        {
+            if ($now -ge $AddNewUsersDate)
+            {
+                $global:AddNewUsers = $true
+                Write-Log("$AddNewUsersDate has passed. Invoking NewUser processing")
+            }
+        }
+        if (-Not $AddAllUsers)
+        {
+            if ($now -ge $AddAllUsersDate)
+            {
+                $global:AddAllUsers = $true
+                Write-Log("$AddAllUsersDate has passed. Invoking AllUser processing")
+
+            }
+        }
         return process-amaint-message($xmlmsg)
     }
     elseif ($msg.compromisedlogin)
@@ -265,7 +340,11 @@ function process-amaint-message($xmlmsg)
 
     $create = $false
     $update = $false
+    $AddToMaillist = $false
+    $AddToLightweightMigrations = $false
+
     $scopedusername = $username + "@sfu.ca"
+    
     # See if the user already has an Exchange Mailbox
     try {
         $mb = Get-Mailbox $scopedusername -ErrorAction Stop
@@ -281,12 +360,75 @@ function process-amaint-message($xmlmsg)
         $create = $true
         $update = $true
     }
+
+    $roles = @($xmlmsg.synclogin.person.roles.ChildNodes.InnerText)
+
+    if ($create -and $AddNewUsers)
+    {
+        # See if ConnectUsers hash needs reloading
+        Load-ConnectUsers
+
+        # Check whether the user exists in Connect.
+        if ($ConnectUsers.$username)
+        {
+            # Yeup
+            if ($ConnectUsers.$username -match "lightweight")
+            {
+                # Ok to activate in Exchange, but signal that their Connect content needs to be migrated
+                $AddToLightweightMigrations = $true
+                $AddToMaillist = $true
+            }
+            else
+            {
+                # fullweight Connect account exists. 
+                # Check if they have a staff/faculty/other role. If they don't, we can ignore this update
+                # until after Aug 10th-ish (whenever the cutoff date is for all remaining users)
+                if ($AddAllUsers -or $roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other")
+                {
+                    # If they aren't already on the 'pending' list, add them and notify Steve
+                    try {
+                        if (Add-UserToMaillist $username "exchange-migrations-pending")
+                        {
+                            $msgSubject = "User $username needs to be migrated to Exchange"
+                            $msgBody = "Added to exchange-migrations-pending"
+                        }
+                        else
+                        {
+                            # Already on there. Nothing to do.
+                            Write-Log "Skipping update for $username. Still has fullweight Connect account and already added to exchange-migrations-pending"
+                            return 1
+                        } 
+                    }
+                    catch {
+                        # Error adding user to list. Notify Steve but do nothing else.
+                        $msgSubject = "User $username needs to be migrated to Exchange but an error occurred"
+                        $msgBody = "Error occurred adding user to exchange-migrations-pending: $_"
+                    }
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "$msgSubject" `
+                        -SmtpServer $SmtpServer -Body "$msgBody"
+                }
+                else
+                {
+                    # Student, retiree, or f_ role only. Ignore but log.
+                    Write-Log "Skipping update for $username. Still has fullweight Connect account and no staff/faculty/sponsored role"
+                }
+                return 1
+            }
+        }
+        else
+        {
+            # Not in Connect
+            # At least for now, just fall through to create account if they don't exist in Connect
+            $AddToMaillist = $true
+        }
+    }
     
     # No mailbox exists, Enable the mailbox in Exchange
     if ($create)
     {
         # TODO: We need to determine whether the user previously had an Exchange mailbox and
         # if so, use Connect-Mailbox to reconnect them, as Enable-Mailbox will always create a new mailbox.
+        # For now, we never disable a mailbox, we just disable access to it.
         Write-Log "Creating mailbox for $username"
         if ($PassiveMode)
         {
@@ -301,7 +443,8 @@ function process-amaint-message($xmlmsg)
         else 
         {
             try {
-                Enable-Mailbox -Identity $scopedusername -ErrorAction Stop
+                $junk = Enable-Mailbox -Identity $scopedusername -ErrorAction Stop
+                $junk = Set-CASMailbox $scopedusername -PopEnabled $false -OwaMailboxPolicy "Default" -ErrorAction Stop
                 $mb = Get-Mailbox $scopedusername -ErrorAction Stop
             }
             catch {
@@ -310,13 +453,43 @@ function process-amaint-message($xmlmsg)
                  Write-Log $LastError
                  return 0
             }
+#            try {
+#                Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+#            }
+#            catch {
+#                Write-Log "Unable to set default OWA settings for $scopedusername, but safe to continue"
+#            }
+
+            if ($AddToMaillist)
+            {
+                try {
+                    $junk = Add-UserToMaillist $username $ExchangeUsersListPrimary
+                }
+                catch {
+                    # If the user doesn't get added to the previous list, they won't get email in the new environment from anywhere but inside Exchange.
+                    # This is not a catastrophe, so allow the process to continue, but alert Steve to manually add the user ASAP.
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Error adding $username to list $ExchangeUsersListPrimary" `
+                    -SmtpServer $SmtpServer -Body "$_"
+                }
+            }
+            if ($AddToLightweightMigrations)
+            {
+                try {
+                    $junk = Add-UserToMaillist $username "lightweight-migrations" 
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Lightweight acct $username converted to Exchange" `
+                    -SmtpServer $SmtpServer -Body "Make sure their SFUConnect data gets migrated."
+                }
+                catch {
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Error adding $username to list lightweight-migrations" `
+                    -SmtpServer $SmtpServer -Body "$_"
+                }
+            }
         }
     }
 
     # Default to hidden in GAL
     $hideInGal=$true
 
-    $roles = @($xmlmsg.synclogin.person.roles.ChildNodes.InnerText)
     if ($roles -contains "staff" -or $roles -contains "faculty" -or ($roles -contains "other" -and [int]$xmlmsg.synclogin.person.sfuVisibility -gt 4))
     {
         if ($mbenabled)
@@ -325,14 +498,30 @@ function process-amaint-message($xmlmsg)
         }
     }
 
+    # Save for later comparisons
+    $PreferredEmail = $xmlmsg.synclogin.person.email
+
+    $AmaintAliases = @($xmlmsg.syncLogin.login.aliases.ChildNodes.InnerText)
+
+    # Determine whether we should omit user's aliases from Exchange. For most Student
+    # accounts, their alias is their name, which is personal information, so if we 
+    # limit their account info to just their account name, we minimize PII exposed in Exchange.
+    # The AD update scripts will ensure their names are masked if their sfuVisibility is < 5
+    $maskAliases = $false
+    if ($hideInGal -and [int]$xmlmsg.synclogin.person.sfuVisibility -lt 5)
+    {
+        $maskAliases = $true
+        $PreferredEmail = $scopedusername
+        $AmaintAliases = @()
+    }
+
+
+
     if ($mbenabled -ne $casmb.OWAEnabled)
     {
         Write-Log "Account status changed. Updating"
         $update=$true
     }
-
-    # Save for later comparisons
-    $PreferredEmail = $xmlmsg.synclogin.person.email
 
     # Check if the account needs updating
     if (! $update)
@@ -359,9 +548,15 @@ function process-amaint-message($xmlmsg)
             }
         }   
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
-        if (Compare-Object -ReferenceObject $aliases -DifferenceObject @($xmlmsg.syncLogin.login.aliases.ChildNodes.InnerText))
-        {
-            Write-Log "Aliases have changed. Exchange had: $($aliases -join ','). Updating"
+        try {
+            if (Compare-Object -ReferenceObject $aliases -DifferenceObject $AmaintAliases)
+            {
+                Write-Log "Aliases have changed. Exchange had: $($aliases -join ','). Updating"
+                $update = $true
+            }
+        }
+        catch {
+            # The above can fail if the user has no aliases. Set update to true *just in case*
             $update = $true
         }
 
@@ -380,6 +575,26 @@ function process-amaint-message($xmlmsg)
             Write-Log "HideInGal state changed. Updating"
             $update = $true
         }
+
+        ## Check Display Name if appropriate
+        if ($roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other" -or [int]$xmlmsg.synclogin.person.sfuVisibility -gt 4)
+        {
+            $anondn = $false
+            if ($mb.DisplayName -ne $xmlmsg.synclogin.login.gcos)
+            {
+                Write-Log "DisplayName doesn't match. Updating"
+                $update = $true
+            }
+        }
+        else 
+        {
+            $anondn = $true
+            if ($mb.DisplayName -ne $username)
+            {
+                Write-Log "DisplayName is not anonymized and needs to be. Updating"
+                $update = $true
+            }
+        }
     }
 
     if ($AddNewUsers -and $mb.PrimarySmtpAddress -Match "\+sfu_connect")
@@ -392,13 +607,30 @@ function process-amaint-message($xmlmsg)
     if ($update)
     {
         # TODO: If there are any other attributes we should set on new or changed mailboxes, do it here
+
+        # For that rare case when a user has specified a non-SFU PreferredEmail address in SFUDS
         if ($PreferredEmail -Notmatch "@.*sfu.ca")
         {
-            # For that rare case when a user has specified a non-SFU PreferredEmail address in SFUDS
-            $PreferredEmail = $username + "@sfu.ca"
+            # See if the domain of the PreferredEmail is whitelisted
+            if ($PreferredEmail -match "@(.*)")
+            {
+                $domain = $Matches[1]
+                if ($ExternalDomains -notcontains $domain)
+                {
+                    Write-Log "User's PreferredEmail domain $domain is not whitelisted. Setting to default address"
+                    $PreferredEmail = $username + "@sfu.ca"
+                }
+                else {
+                    Write-Log "User's PreferredEmail domain $domain is whitelisted. Allowing it"
+                }
+            }
+            else 
+            {    
+                $PreferredEmail = $username + "@sfu.ca"
+            }
         }
 
-        $addresses = @($username) + @($xmlmsg.synclogin.login.aliases.ChildNodes.InnerText)
+        $addresses = @($username) + $AmaintAliases
         # $addresses will contain duplicates because PreferredEmail is always going to be one of the aliases or the username
         # We'll deal with that below
 
@@ -430,13 +662,28 @@ function process-amaint-message($xmlmsg)
                     # eliminate duplicates
                     continue
                 }
-                $ScopedAddresses += $Scopedaddr
+                if ($Scopedaddr -ne "@sfu.ca")
+                {
+                    $ScopedAddresses += $Scopedaddr
+                }
+            }
+            if ($anondn)
+            {
+                $DisplayName = $username
+            }
+            else 
+            {
+                $DisplayName = $xmlmsg.synclogin.login.gcos    
             }
         }
         else 
         {
             $primaryemail = $username + "_disabled@sfu.ca"
             $scopedaddresses += $primaryemail
+<<<<<<< HEAD
+=======
+            $DisplayName = $username
+>>>>>>> master
         }
 
         try {
@@ -446,13 +693,15 @@ function process-amaint-message($xmlmsg)
             }
             else 
             {
-                Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $hideInGal `
+                $junk = Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $hideInGal `
                             -EmailAddressPolicyEnabled $false `
                             -EmailAddresses $ScopedAddresses `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
+                            -DisplayName $DisplayName `
                             -ErrorAction Stop
-                Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
-                Write-Log "Updated mailbox for ${scopedusername}. HideInGal: $hideInGal. Aliases: $ScopedAddresses"
+                Write-Log "Updated mailbox for ${scopedusername}. HideInGal: $hideInGal. Aliases: $ScopedAddresses; DisplayName: $DisplayName"
+                $junk = Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+
             }
 
             if ($mbenabled -ne $casmb.OWAEnabled)
@@ -464,15 +713,18 @@ function process-amaint-message($xmlmsg)
                 else 
                 {    
                     Write-Log "Setting Account-Enabled state to $mbenabled"
-                    Set-Mailbox -Identity $scopedusername -PrimarySmtpAddress $primaryemail -ErrorAction Stop
-                    Set-CASMailbox $scopedusername -ActiveSyncEnabled $mbenabled `
+                    $junk = Set-Mailbox -Identity $scopedusername -PrimarySmtpAddress $primaryemail -ErrorAction Stop
+                    $junk = Set-CASMailbox $scopedusername -ActiveSyncEnabled $mbenabled `
                                         -ImapEnabled $mbenabled `
                                         -EwsEnabled $mbenabled `
                                         -MAPIEnabled $mbenabled `
                                         -OWAEnabled $mbenabled `
-                                        -PopEnabled $mbenabled `
                                         -OWAforDevicesEnabled $mbenabled `
                                         -ErrorAction Stop
+                    if (-not $mbenabled)
+                    {
+                        $junk = Set-CASMailbox $scopedusername -PopEnabled $false -ErrorAction Stop
+                    }
                 }
             }
             
@@ -483,6 +735,7 @@ function process-amaint-message($xmlmsg)
             return 0
         }
     }
+    Write-Log "Got here. Returning Success"
 
     return 1
 }
@@ -494,6 +747,7 @@ function process-amaint-message($xmlmsg)
 function retry-message($m)
 {
     [xml]$mtmp = $m.Text
+    $firstRetry = $false
     # Add a retry counter if one isn't already there
     if (! $mtmp.retryMessage.count)
     {
@@ -506,6 +760,10 @@ function retry-message($m)
     else
     {
         $count = [int]$mtmp.retryMessage.count
+        if ($count -eq 1)
+        {
+            $firstRetry = $true
+        }
         $count++
         $mtmp.retryMessage.count = "$count"
     }
@@ -518,6 +776,10 @@ function retry-message($m)
 
     Send-ActiveMQMessage -Queue $retryQueueName -Session $AMQSession -Message $mtmp
 
+    if ($firstRetry)
+    {
+        return 2
+    }
     return 1
 
 }
@@ -633,7 +895,9 @@ while(1)
         $noactivity=0
 
         if (-Not $isRetry) { Write-Log "Processing msg `r`n $($msg.InnerXml)" }
-        if (process-message($msg))
+        $rc = process-message($msg)
+        Write-Log "RC = $rc"
+        if ($rc -gt 0)
         {
             Write-Log "Success"
             $rc = $Message.Acknowledge()
@@ -654,6 +918,14 @@ while(1)
             }
             Write-Log "Failure. Will Retry"
             $rc = retry-message($Message)
+
+            if ($rc -eq 2)
+            {
+                # Special case: The first time processing a msg in the retry queue, if it fails, treat it as a success
+                # for the purposes of calculating the backoff, so that if there are messages queued behind it, we get
+                # through them all quickly.
+                $retryFailures = 0
+            }
             # Even if retry-message exceeds max retries, we still have to Acknowledge msg to clear it from the queue
             $Message.Acknowledge()
             if ($rc -eq 0)

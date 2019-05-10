@@ -130,7 +130,7 @@ try {
             {
                 # Return summary of Exchange databases. Currently only looks at which
                 # server each is on.
-                $Resp = Get-MailboxDatabase | Select -Property Name,Server,Servers | ConvertTo-Json
+                $Resp = Get-MailboxDatabase | Get-MailboxDatabaseCopyStatus | ConvertTo-Json
             }
 
             elseif ($line -Match "^$Token new(user|room|equipment) (.+)")
@@ -279,8 +279,7 @@ try {
                                     -EmailAddressPolicyEnabled $false `
                                     -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                                     -EmailAddresses $ScopedAddresses -ErrorAction Stop
-                        Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
-                        Set-CASMailbox $scopedusername -ActiveSyncEnabled $true -ErrorAction Stop
+                        Set-CASMailbox $scopedusername -ActiveSyncEnabled $true -OWAEnabled $true  -OwaMailboxPolicy "Default" -ErrorAction Stop
                         Write-Log "Enabled mailbox for $username"
                         $Resp = "ok. Mailbox enabled"
 
@@ -288,6 +287,16 @@ try {
                     catch
                     {
                         Write-Log "Failed to create mailbox for $username . $_"
+                    }
+                    try 
+                    {
+                        # If we just created the mailbox, there's a good chance this command will fail. Since it's not critical
+                        # ignore it if it does
+                        Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+                    }
+                    catch 
+                    {
+                        Write-Log "Caught error trying to set OWA settings for $scopedusername. Ignoring"    
                     }
                 }
                 catch {
@@ -309,7 +318,7 @@ try {
                     Set-Mailbox -Identity $scopedusername -HiddenFromAddressListsEnabled $true `
                                 -EmailAddressPolicyEnabled $false `
                                 -EmailAddresses "SMTP:$($username)+sfu_connect@sfu.ca" -ErrorAction Stop
-                    Set-CASMailbox $scopedusername -ActiveSyncEnabled $false -ErrorAction Stop
+                    Set-CASMailbox $scopedusername -ActiveSyncEnabled $false -OWAEnabled $false -ErrorAction Stop
             
                     $Resp = "ok. Mailbox disabled"
                 }

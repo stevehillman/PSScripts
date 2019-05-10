@@ -2,11 +2,12 @@
 .SYNOPSIS
     Import AD users into Exchange
 .DESCRIPTION
-    Import all members of a maillist into Exchange from AD. This is meant as a one-time import
+    Import all members of a maillist or file into Exchange from AD. This is meant as a one-time import
     but for each user, it checks whether they have a mailbox before creating one
 .PARAMETER Name
-    Name of the maillist to use to determine which users to import. Use "All" to import all users. If importing all users,
-    the OU listed in the settings.json is used as the source of users
+    Name of the maillist or file to use to determine which users to import. Use "All" to import all users. 
+    To specify a file, specify a full path (with '\'s) to differentiate it from a maillist name
+    If importing all users, the OU listed in the settings.json is used as the source of users
 #>
 
 # Force user to provide either a listname or "all"
@@ -79,6 +80,8 @@ function load-settings($s_file)
             }
         }
     }
+
+    $global:popusers = Get-Content C:\Users\hillman\popusers
 }
 
 function Write-Log($logmsg)
@@ -120,10 +123,16 @@ if ($Name -eq "All")
 {
     $users = GET-ADUser -Filter '*' -Searchbase $UsersOU
 }
-else 
+elseif ($Name -match "\\")
+{
+    $users = Get-Content $Name
+}
+else
 {
     $users = Get-AOBRestMaillistMembers -Maillist $Name -AuthToken $RestToken     
 }
+
+$FailedUsers = @()
 
 foreach ($u in $users)
 {
@@ -134,7 +143,14 @@ foreach ($u in $users)
     }
     if ($Name -ne "All")
     {
-        $uad = Get-ADUser $u 
+        try {
+            $uad = Get-ADUser $u
+        }
+        catch {
+            Write-Log "Error: $u does not exist in AD. Skipping"
+            $FailedUsers += $u
+            Continue
+        }
         $u = $uad
         Write-host "Processing $u"
     }
@@ -176,6 +192,7 @@ foreach ($u in $users)
             Write-Log "PassiveMode: Enable-mailbox -Identity $($u.SamAccountName)"
         }
         else {
+            $popenabled = $popusers -contains $u.SamAccountName
             try {
                 $junk = Enable-Mailbox -Identity $userid -ErrorAction Stop
                 Set-Mailbox -Identity $userid -HiddenFromAddressListsEnabled $true `
@@ -183,8 +200,7 @@ foreach ($u in $users)
                             -EmailAddresses "$($u.SamAccountName)+sfu_connect@sfu.ca" `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -ErrorAction Stop
-                Set-MailboxMessageConfiguration $userid -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
-                Set-CASMailbox $userid -ActiveSyncEnabled $false -ErrorAction Stop
+                Set-CASMailbox $userid -ActiveSyncEnabled $false -OWAEnabled $false -PopEnabled $popenabled -OwaMailboxPolicy "Default" -ErrorAction Stop
                 # This last command adds mailbox permissions necessary for the 'imapsync' command to create folder structure. Access can be revoked
                 # as soon as that step is done.
                 $junk = Add-MailboxPermission -Identity $userid -User hillman@sfu.ca -AccessRights FullAccess -InheritanceType All -ErrorAction Stop
@@ -193,6 +209,12 @@ foreach ($u in $users)
             catch
             {
                 Write-Log "Failed to create mailbox for $($u.SamAccountName). $_"
+            }
+            try {
+                Set-MailboxMessageConfiguration $userid -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
+            }
+            catch {
+                Write-Log "Failed to set OWA settings for $userid"
             }
         }
     }
@@ -235,4 +257,10 @@ foreach ($u in $users)
     else {
         Write-Log "WARNING: No quota found for $($u.SamAccountName)"
     }
+}
+
+if ($FailedUsers.count -gt 0)
+{
+    Write-Host "The following users were not found in AD and not added to Exchange"
+    $FailedUsers
 }
