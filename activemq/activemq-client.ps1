@@ -138,25 +138,6 @@ function process-message($xmlmsg)
     }
 }
 
-# Check whether a user is on Exchange.
-# Returns true if they are, throws an exception if there was an error while checking
-function OnExchange($acct)
-{
-    try 
-    {   
-        $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListPrimary -Member $acct -AuthToken $RestToken
-        if (-Not $rc)
-        {
-            $rc = Get-AOBRestMaillistMembers -Maillist $ExchangeUsersListSecondary -Member $acct -AuthToken $RestToken
-        }
-    }
-    catch {
-        $global:LastError =  "Error communicating with REST Server for $username. Aborting processing of msg. $_"
-        throw $LastError
-    }
-    return $rc
-}
-
 function send-compromisedresult($result, $status)
 {
     $elem = $result.CreateElement("statusMsg")
@@ -185,22 +166,6 @@ function process-compromised-message($xmlmsg)
     $elem.InnerText = "Exchange"
     $result.compromisedlogin.AppendChild($elem)
 
-
-    try {
-        $rc = OnExchange($username)
-    }
-    catch {
-        Write-Log $_
-        return 0
-    }
-
-    if (-Not $rc)
-    {
-        Write-Log "Skipping Compromised Account $username. Not a member of $ExchangeUsersListPrimary or $ExchangeUsersListSecondary"
-        send-compromisedresult($result "Skipping $username. Not on Exchange")
-        return 1
-    }
-
     Write-Log "Processing Compromised Account $username"
 
     # Verify the user in AD
@@ -228,12 +193,31 @@ function process-compromised-message($xmlmsg)
     }
 
     # Unless compromised-message says otherwise, clear Exchange settings
-    if ($xmlmsg.compromisedlogin.settings.resetexchange -match "false")
+    if ($xmlmsg.compromisedlogin.settings.resetEmailSettings -match "false")
     {
         return 1
     }
 
     # Start of account cleanup
+
+    # For reference, here are the settings that were reset in Zimbra:
+    # Reset all Zimbra settings that Spammers might monkey with. Refer to Confluence
+    # for the authoritative list. So far it consists of
+    #
+    #  zmprov settings:
+    #  zimbraPrefOutOfOfficeReply (default: "")
+    #  zimbraPrefSaveToSent (default: TRUE)
+    #  zimbraPrefAutoAddAddressEnabled (default: TRUE)
+    #  zimbraMailSieveScript (parsed to disable any filter that forwards or discards mail)
+    #
+    # Note: the rest of the settings are per identity and multiple identities may exist
+    # We just clear primary identity. Secondary identities will be ignored:
+	# zimbraPrefFromDisplay
+	# zimbraPrefFromAddress
+	# zimbraPrefReplyToDisplay
+	# zimbraPrefReplyToAddress
+    # zimbraPrefReplyToEnabled
+    # zimbraPrefMailSignature
 
     # Disable OWA and MAPI access. 
     # Is there any point in doing this? It doesn't kill existing sessions, just prevents new ones from being started
@@ -242,12 +226,12 @@ function process-compromised-message($xmlmsg)
 
     # Disable all rules
     try {
-        $rules = Get-InboxRule -Mailbox $scopedusername | where {$_.Enabled}
+        $rules = Get-InboxRule -Mailbox $scopedusername | where {$_.Enabled  -and ($_.DeleteMessage -eq $true -or $_.ForwardTo -match "[a-z]+" -or $_.RedirectTo -match "[a-z]+")}
         $response = $rules.Count + " rules disabled. "
         $rules | Disable-InboxRule
     }
     catch {
-        $result = "An error occurred disabling rules: $_ . "
+        $response = "An error occurred disabling rules: $_ . "
     }
 
     # Clear signatures
@@ -258,7 +242,8 @@ function process-compromised-message($xmlmsg)
         $response = $response + "Error clearing signatures: $_ . "
     }
 
-    # Ensure mail isn't being forwarded
+    # Ensure mail isn't being forwarded. This should never be the case as this attribute is not
+    # exposed to the user, but check anyway
     if ($mailbox.ForwardingSMTPAddress -ne "")
     {
         try {
@@ -301,28 +286,6 @@ function process-amaint-message($xmlmsg)
         #  - force HideInGal to True
         # 
         # maybe disable-mailbox after account is inactive for 1(?) year?
-    }
-
-    # Skip users not on Exchange yet. Remove this check when all users are on.
-    # The AddNewUsers and PassiveMode mode settings are read from the Settings file
-    # If AddNewUsers is True, process *new user additions* to Exchange -- add them as long as they don't already exist
-    # If PassiveMode is True, process all user updates from Amaint but don't actually make changes. 
-    # If either flag is true, we don't need to query the maillist membership because we're processing everyone.
-    if (!$AddNewUsers -and !$PassiveMode)
-    {
-        try {
-            $rc = OnExchange($username)
-        }
-        catch {
-            Write-Log $_
-            return 0
-        }
-
-        if (-Not $rc)
-        {
-            Write-Log "Skipping update for $username. Not a member of $ExchangeUsersListPrimary or $ExchangeUsersListSecondary"
-            return 1
-        }
     }
 
     Write-Log "Processing update for $username"
@@ -680,10 +643,7 @@ function process-amaint-message($xmlmsg)
         {
             $primaryemail = $username + "_disabled@sfu.ca"
             $scopedaddresses += $primaryemail
-<<<<<<< HEAD
-=======
             $DisplayName = $username
->>>>>>> master
         }
 
         try {
@@ -845,6 +805,10 @@ while(1)
             # No message from the main queue. See if we should check the retry queue
             $loopcounter++
             # Only try the retry queue every x seconds, where x is 10x number of failures in a row
+            # This acts as a sequential backoff timer. The retry queue is first tried after 10 seconds
+            # then if a message in the retry queue fails again, the next retry time will be 20 seconds,
+            # and so on. That way, if there's a failure in underlying infrastructure, the message should
+            # still eventually get processed. 
             if ($loopcounter -gt $retryTimer)
             {
                 $Message = $RetryConsumer.Receive([System.TimeSpan]::FromTicks(10000))
