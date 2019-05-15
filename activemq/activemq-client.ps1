@@ -187,7 +187,7 @@ function process-compromised-message($xmlmsg)
     catch {
         # Nope
         Write-Log "No mailbox found for $scopedusername. Skipping"
-        send-compromisedresult($result "No mailbox found for $username. Skipping")
+        send-compromisedresult $result "No mailbox found for $username. Skipping"
         return 1
     }
 
@@ -256,7 +256,7 @@ function process-compromised-message($xmlmsg)
 
     if ($xmlmsg.compromisedLogin.respond -and $xmlmsg.compromisedLogin.respond -ne "")
     {
-        send-compromisedresult($result $response $xmlmsg.compromisedLogin.respond)
+        send-compromisedresult $result $response $xmlmsg.compromisedLogin.respond
     }
     return 1
 }
