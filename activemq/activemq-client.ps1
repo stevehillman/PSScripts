@@ -25,7 +25,6 @@ function load-settings($s_file)
     $global:Username = $settings.amqUsername
     $global:Password = $settings.amqPassword
     $global:queueName = $settings.QueueName
-    $global:queueResponseName = $settings.queueResponseName
     $global:retryQueueName = $settings.RetryQueueName
     $global:RestToken = $settings.RestToken
     $global:MaxRetries = $settings.MaxRetries
@@ -138,12 +137,12 @@ function process-message($xmlmsg)
     }
 }
 
-function send-compromisedresult($result, $status)
+function send-compromisedresult($result, $status, $responseQueue)
 {
     $elem = $result.CreateElement("statusMsg")
     $elem.InnerText = $status
     $result.compromisedlogin.AppendChild($elem)
-    Send-ActiveMQMessage -Queue $queueResponseName -Message $result -Session $AMQSession
+    Send-ActiveMQMessage -Queue $responseQueue -Message $result -Session $AMQSession
 }
 
 function process-compromised-message($xmlmsg)
@@ -255,8 +254,10 @@ function process-compromised-message($xmlmsg)
         }
     }
 
-    send-compromisedresult($result $response)
-
+    if ($xmlmsg.compromisedLogin.respond -and $xmlmsg.compromisedLogin.respond -ne "")
+    {
+        send-compromisedresult($result $response $xmlmsg.compromisedLogin.respond)
+    }
     return 1
 }
 
