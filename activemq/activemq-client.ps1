@@ -141,7 +141,7 @@ function send-compromisedresult($result, $status, $responseQueue)
 {
     $elem = $result.CreateElement("statusMsg")
     $elem.InnerText = $status
-    $result.compromisedlogin.AppendChild($elem)
+    $junk = $result.compromisedlogin.AppendChild($elem)
     Send-ActiveMQMessage -Queue $responseQueue -Message $result -Session $AMQSession
 }
 
@@ -155,15 +155,15 @@ function process-compromised-message($xmlmsg)
     $elem = $result.CreateElement("username")
     $elem.InnerText = $username
     # Add the element to the XML object
-    $result.compromisedlogin.AppendChild($elem)
+    $junk = $result.compromisedlogin.AppendChild($elem)
     # Repeat for serial #
     $elem = $result.CreateElement("serial")
     $elem.InnerText = $xmlmsg.compromisedlogin.serial
-    $result.compromisedlogin.AppendChild($elem)
+    $junk = $result.compromisedlogin.AppendChild($elem)
     # And for app Name
     $elem = $result.CreateElement("application")
     $elem.InnerText = "Exchange"
-    $result.compromisedlogin.AppendChild($elem)
+    $junk = $result.compromisedlogin.AppendChild($elem)
 
     Write-Log "Processing Compromised Account $username"
 
@@ -226,8 +226,8 @@ function process-compromised-message($xmlmsg)
     # Disable all rules
     try {
         $rules = Get-InboxRule -Mailbox $scopedusername | where {$_.Enabled  -and ($_.DeleteMessage -eq $true -or $_.ForwardTo -match "[a-z]+" -or $_.RedirectTo -match "[a-z]+")}
-        $response = $rules.Count + " rules disabled. "
         $rules | Disable-InboxRule
+        $response = "$($rules.Count) rules disabled. "
     }
     catch {
         $response = "An error occurred disabling rules: $_ . "
@@ -243,11 +243,11 @@ function process-compromised-message($xmlmsg)
 
     # Ensure mail isn't being forwarded. This should never be the case as this attribute is not
     # exposed to the user, but check anyway
-    if ($mailbox.ForwardingSMTPAddress -ne "")
+    if ($mb.ForwardingSmtpAddress -and $mailbox.ForwardingSmtpAddress -ne "")
     {
         try {
-            Set-Mailbox $scopedusername -DeliverToMailboxAndForward $false -ForwardingSMTPAddress ""
-            $response = $response + "Forwarding cleared from $($mailbox.ForwardingSMTPAddress). "
+            Set-Mailbox $scopedusername -DeliverToMailboxAndForward $false -ForwardingSmtpAddress ""
+            $response = $response + "Forwarding cleared from $($mailbox.ForwardingSmtpAddress). "
         }
         catch {
             $response = $response + "Error clearing forwarding: $_ . "
