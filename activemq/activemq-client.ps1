@@ -227,7 +227,14 @@ function process-compromised-message($xmlmsg)
     try {
         $rules = Get-InboxRule -Mailbox $scopedusername | where {$_.Enabled  -and ($_.DeleteMessage -eq $true -or $_.ForwardTo -match "[a-z]+" -or $_.RedirectTo -match "[a-z]+")}
         $rules | Disable-InboxRule
-        $response = "$($rules.Count) rules disabled. "
+        
+        # When there's only one rule, $rules isn't an array, so $rules.count will be undefined
+        $rulecount = 1;
+        if ($rules.Count -eq 0 -or $rules.Count -gt 1)
+        {
+            $rulecount = $rules.Count
+        }
+        $response = "$rulecount rule(s) disabled. "
     }
     catch {
         $response = "An error occurred disabling rules: $_ . "
