@@ -295,7 +295,7 @@ function process-amaint-message($xmlmsg)
         # 
         # maybe disable-mailbox after account is inactive for 1(?) year?
     }
-
+ 
     Write-Log "Processing update for $username"
 
     # Verify the user in AD
@@ -342,55 +342,14 @@ function process-amaint-message($xmlmsg)
         # Check whether the user exists in Connect.
         if ($ConnectUsers.$username)
         {
-            # Yeup
-            if ($ConnectUsers.$username -match "lightweight")
-            {
-                # Ok to activate in Exchange, but signal that their Connect content needs to be migrated
-                $AddToLightweightMigrations = $true
-                $AddToMaillist = $true
-            }
-            else
-            {
-                # fullweight Connect account exists. 
-                # Check if they have a staff/faculty/other role. If they don't, we can ignore this update
-                # until after Aug 10th-ish (whenever the cutoff date is for all remaining users)
-                if ($AddAllUsers -or $roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other")
-                {
-                    # If they aren't already on the 'pending' list, add them and notify Steve
-                    try {
-                        if (Add-UserToMaillist $username "exchange-migrations-pending")
-                        {
-                            $msgSubject = "User $username needs to be migrated to Exchange"
-                            $msgBody = "Added to exchange-migrations-pending"
-                        }
-                        else
-                        {
-                            # Already on there. Nothing to do.
-                            Write-Log "Skipping update for $username. Still has fullweight Connect account and already added to exchange-migrations-pending"
-                            return 1
-                        } 
-                    }
-                    catch {
-                        # Error adding user to list. Notify Steve but do nothing else.
-                        $msgSubject = "User $username needs to be migrated to Exchange but an error occurred"
-                        $msgBody = "Error occurred adding user to exchange-migrations-pending: $_"
-                    }
-                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "$msgSubject" `
-                        -SmtpServer $SmtpServer -Body "$msgBody"
-                }
-                else
-                {
-                    # Student, retiree, or f_ role only. Ignore but log.
-                    Write-Log "Skipping update for $username. Still has fullweight Connect account and no staff/faculty/sponsored role"
-                }
-                return 1
-            }
-        }
-        else
-        {
-            # Not in Connect
-            # At least for now, just fall through to create account if they don't exist in Connect
-            $AddToMaillist = $true
+            # From now (Aug 31/2018) on, treat all accounts that 
+            # still exist in Connect as though they're lightweight transitioning
+            # back to fullweight - i.e. create them new in Exchange, but flag that their
+            # content from Connect needs migrating. We'll do that until our
+            # migration software license expires
+           
+            $AddToLightweightMigrations = $true
+            
         }
     }
     
@@ -431,18 +390,7 @@ function process-amaint-message($xmlmsg)
 #                Write-Log "Unable to set default OWA settings for $scopedusername, but safe to continue"
 #            }
 
-            if ($AddToMaillist)
-            {
-                try {
-                    $junk = Add-UserToMaillist $username $ExchangeUsersListPrimary
-                }
-                catch {
-                    # If the user doesn't get added to the previous list, they won't get email in the new environment from anywhere but inside Exchange.
-                    # This is not a catastrophe, so allow the process to continue, but alert Steve to manually add the user ASAP.
-                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Error adding $username to list $ExchangeUsersListPrimary" `
-                    -SmtpServer $SmtpServer -Body "$_"
-                }
-            }
+          
             if ($AddToLightweightMigrations)
             {
                 try {
