@@ -390,19 +390,6 @@ function process-amaint-message($xmlmsg)
 #                Write-Log "Unable to set default OWA settings for $scopedusername, but safe to continue"
 #            }
 
-          
-            if ($AddToLightweightMigrations)
-            {
-                try {
-                    $junk = Add-UserToMaillist $username "lightweight-migrations" 
-                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Lightweight acct $username converted to Exchange" `
-                    -SmtpServer $SmtpServer -Body "Make sure their SFUConnect data gets migrated."
-                }
-                catch {
-                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Error adding $username to list lightweight-migrations" `
-                    -SmtpServer $SmtpServer -Body "$_"
-                }
-            }
         }
     }
 
@@ -614,6 +601,7 @@ function process-amaint-message($xmlmsg)
                             -EmailAddresses $ScopedAddresses `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -DisplayName $DisplayName `
+			    -SingleItemRecoveryEnabled $true `
                             -ErrorAction Stop
                 Write-Log "Updated mailbox for ${scopedusername}. HideInGal: $hideInGal. Aliases: $ScopedAddresses; DisplayName: $DisplayName"
                 $junk = Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
