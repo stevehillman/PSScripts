@@ -29,18 +29,13 @@ function load-settings($s_file)
     $global:RestToken = $settings.RestToken
     $global:MaxRetries = $settings.MaxRetries
     $global:MaxRetryTimer = $settings.MaxRetryTimer
-    $global:ExchangeUsersListPrimary = $settings.ExchangeUsersListPrimary
-    $global:ExchangeUsersListSecondary = $settings.ExchangeUsersListSecondary
+    $global:ExchangeExcludedUsersList = $settings.ExchangeExcludedUsersList
     $global:ErrorsFromEmail = $settings.ErrorsFromEmail
     $global:ErrorsToEmail = $settings.ErrorsToEmail
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
-    $global:AddNewUsersDate = $settings.AddNewUsersDate
-    $global:AddAllUsersDate = $settings.AddAllUsersDate
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
     $global:SubscribeURL = $settings.SubscribeURL
-    $global:AddNewUsers = $false
-    $global:AddAllUsers = $false
 
     $global:ExternalDomains = @()
     $settings.ExternalDomains | ForEach {
@@ -106,23 +101,6 @@ function process-message($xmlmsg)
     if ($msg.synclogin)
     {
         $global:now = Get-Date -Format FileDate
-        if (-Not $AddNewUsers)
-        {
-            if ($now -ge $AddNewUsersDate)
-            {
-                $global:AddNewUsers = $true
-                Write-Log("$AddNewUsersDate has passed. Invoking NewUser processing")
-            }
-        }
-        if (-Not $AddAllUsers)
-        {
-            if ($now -ge $AddAllUsersDate)
-            {
-                $global:AddAllUsers = $true
-                Write-Log("$AddAllUsersDate has passed. Invoking AllUser processing")
-
-            }
-        }
         return process-amaint-message($xmlmsg)
     }
     elseif ($msg.compromisedlogin)
@@ -504,13 +482,6 @@ function process-amaint-message($xmlmsg)
                 $update = $true
             }
         }
-    }
-
-    if ($AddNewUsers -and $mb.PrimarySmtpAddress -Match "\+sfu_connect")
-    {
-        # Once all new users go into Exchange, process every account EXCEPT accounts
-        # that were imported from Zimbra but haven't been migrated yet
-        $update = $false
     }
 
     if ($update)
