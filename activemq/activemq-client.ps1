@@ -36,6 +36,7 @@ function load-settings($s_file)
     $global:SmtpServer = $settings.SmtpServer
     $global:PassiveMode = ($settings.PassiveMode -eq "true")
     $global:SubscribeURL = $settings.SubscribeURL
+    $global:UpdateRoles = ($settings.UpdateRoles -eq "true")
 
     $global:ExternalDomains = @()
     $settings.ExternalDomains | ForEach {
@@ -43,22 +44,33 @@ function load-settings($s_file)
     }
 }
 
-$global:ConnectUsersDate = "00000000"
+$global:ExcludedUsersDate = "00000000"
 
 
-# Load in the list of current Connect Users once a day. Relies on an external process
-# to update the contents of the ConnectUsers file.
-function Load-ConnectUsers()
+# Load from a maillist the users who are excluded from getting an Exchange mailbox
+function Load-ExcludedUsers()
 {
     $global:now = Get-Date -Format FileDate
-    Write-Log "now: $now"
     
-    if ($global:ConnectUsersDate -lt $now -and (Test-Path $ConnectUsersFile))
+    if ($global:ExcludedUsersDate -lt $now)
     {
-        Write-Log "ConnectUsersDate: $ConnectUsersDate, now: $now"
-        $global:ConnectUsers = ConvertFrom-Json ((Get-Content $ConnectUsersFile) -join "")
-        $global:ConnectUsersDate = $now
-        Write-Log "Imported $($ConnectUsers.PSObject.Properties.Name.Count) users from $ConnectUsersFile"
+        $NewExcludedUsers = Get-AOBRestMaillistMembers -Maillist $ExchangeExcludedUsersList -AuthToken $RestToken
+        $newuserscount = $NewExcludedUsers.PSObject.Properties.Name.Count
+        if ($newuserscount -gt 0)
+        {
+            $global:ExcludedUsers = @()
+            [array]::copy($NewExcludedUsers, $global:ExcludedUsers)
+            Write-Log "Imported $newuserscount users from $ExchangeExcludedUsersList"
+            $global:ExcludedUsersDate = $now
+            if ($newuserscount -lt 20)
+            {
+                Write-Log "Excluded users now: $(ExcludedUsers -join ',')"
+            }
+        }
+        elseif ($ExcludedUsers.PSObject.Properties.Name.Count -gt 0)
+        {
+            Write-Log "Possible ERROR loading members of $ExchangeExcludedUsersList. List returned 0 members but had more. Will not discard existing members"
+        }
     }
 }
 
@@ -276,8 +288,17 @@ function process-amaint-message($xmlmsg)
         # 
         # maybe disable-mailbox after account is inactive for 1(?) year?
     }
- 
+
     Write-Log "Processing update for $username"
+
+    # Reload the ExcludedUsers list if necessary
+    Load-ExcludedUsers
+    if ($ExcludedUsers -contains $username )
+    {
+        # User is in the Excluded list. Ensure their mailbox is disabled
+        $mbenabled = $false
+        Write-Log "User $username is in the ExcludedUsers list. Will disable mailbox if not already"
+    }
 
     # Verify the user in AD
     try {
@@ -314,25 +335,6 @@ function process-amaint-message($xmlmsg)
     }
 
     $roles = @($xmlmsg.synclogin.person.roles.ChildNodes.InnerText)
-
-    if ($create -and $AddNewUsers)
-    {
-        # See if ConnectUsers hash needs reloading
-        Load-ConnectUsers
-
-        # Check whether the user exists in Connect.
-        if ($ConnectUsers.$username)
-        {
-            # From now (Aug 31/2018) on, treat all accounts that 
-            # still exist in Connect as though they're lightweight transitioning
-            # back to fullweight - i.e. create them new in Exchange, but flag that their
-            # content from Connect needs migrating. We'll do that until our
-            # migration software license expires
-           
-            $AddToLightweightMigrations = $true
-            
-        }
-    }
     
     # No mailbox exists, Enable the mailbox in Exchange
     if ($create)
@@ -372,6 +374,45 @@ function process-amaint-message($xmlmsg)
 #            }
 
         }
+    }
+
+    # See if roles need updating. We store Roles in a multi-valued Extended Mailbox Attribute, for use by Azure AD Connect and anyone
+    # else who's interested
+    if ($UpdateRoles)
+    {
+        $ExistingRoles = $mb.ExtensionCustomAttribute1
+        $updater = $false
+        # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
+        try {
+            if (Compare-Object -ReferenceObject $ExistingRoles -DifferenceObject $roles)
+            {
+                Write-Log "Roles have changed. Exchange had: $(ExistingRoles -join ','). Updating"
+                $updater = $true
+            }
+        }
+        catch {
+            # The above can fail if the user has no aliases. Set update to true *just in case*
+            $updater = $true
+        }
+        if ($updater)
+        {
+            if ($PassiveMode)
+            {
+                Write-Log "PassiveMode: Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $(roles -join ',') "
+            }
+            else
+            {
+                try {
+                    $junk = Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $roles -ErrorAction Stop
+                }
+                catch {
+                    Write-Log "Unable to update Roles for Exchange Mailbox ${username}: $_"
+                    # For now, we'll ignore Role update failures in case there are other updates
+                    # further down that still need to be applied 
+                }
+            }
+        }
+
     }
 
     # Default to hidden in GAL
@@ -575,7 +616,7 @@ function process-amaint-message($xmlmsg)
                             -EmailAddresses $ScopedAddresses `
                             -AuditEnabled $true -AuditOwner Create,HardDelete,MailboxLogin,Move,MoveToDeletedItems,SoftDelete,Update `
                             -DisplayName $DisplayName `
-			    -SingleItemRecoveryEnabled $true `
+			                -SingleItemRecoveryEnabled $true `
                             -ErrorAction Stop
                 Write-Log "Updated mailbox for ${scopedusername}. HideInGal: $hideInGal. Aliases: $ScopedAddresses; DisplayName: $DisplayName"
                 $junk = Set-MailboxMessageConfiguration $scopedusername -IsReplyAllTheDefaultResponse $false -ErrorAction Stop
