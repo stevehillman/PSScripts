@@ -59,7 +59,7 @@ function Load-ExcludedUsers()
         if ($newuserscount -gt 0)
         {
             $global:ExcludedUsers = @()
-            [array]::copy($NewExcludedUsers, $global:ExcludedUsers)
+            $global:ExcludedUsers = $NewExcludedUsers.Clone()
             Write-Log "Imported $newuserscount users from $ExchangeExcludedUsersList"
             $global:ExcludedUsersDate = $now
             if ($newuserscount -lt 20)
