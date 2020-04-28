@@ -64,7 +64,7 @@ function Load-ExcludedUsers()
             $global:ExcludedUsersDate = $now
             if ($newuserscount -lt 20)
             {
-                Write-Log "Excluded users now: $(ExcludedUsers -join ',')"
+                Write-Log "Excluded users now: $($ExcludedUsers -join ',')"
             }
         }
         elseif ($ExcludedUsers.PSObject.Properties.Name.Count -gt 0)
@@ -386,7 +386,7 @@ function process-amaint-message($xmlmsg)
         try {
             if (Compare-Object -ReferenceObject $ExistingRoles -DifferenceObject $roles)
             {
-                Write-Log "Roles have changed. Exchange had: $(ExistingRoles -join ','). Updating"
+                Write-Log "Roles have changed. Exchange had: $($ExistingRoles -join ','). Updating"
                 $updater = $true
             }
         }
@@ -398,7 +398,7 @@ function process-amaint-message($xmlmsg)
         {
             if ($PassiveMode)
             {
-                Write-Log "PassiveMode: Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $(roles -join ',') "
+                Write-Log "PassiveMode: Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $($roles -join ',') "
             }
             else
             {
