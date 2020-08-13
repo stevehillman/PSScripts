@@ -381,7 +381,18 @@ function process-amaint-message($xmlmsg)
     if ($UpdateRoles)
     {
         $ExistingRoles = $mb.ExtensionCustomAttribute1
+        $SyncFlag = $mb.extensionAttribute15
         $updater = $false
+        $ShouldSync = "nosync"
+        $Maillists = @($xmlmsg.syncLogin.login.maillists.ChildNodes.InnerText)
+
+
+        ### Logic for whether to sync a user to AzureAD is RIGHT HERE ###
+        if ($roles -contains "staff" -or $roles -contains "faculty" -or $Maillists -contains "its-m365-users")
+        {
+            $ShouldSync = "sync"
+        }
+
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
         try {
             if (Compare-Object -ReferenceObject $ExistingRoles -DifferenceObject $roles)
@@ -389,24 +400,29 @@ function process-amaint-message($xmlmsg)
                 Write-Log "Roles have changed. Exchange had: $($ExistingRoles -join ','). Updating"
                 $updater = $true
             }
+            elseif ($ShouldSync -ne $SyncFlag)
+            {
+                Write-Log "AzureAD Sync Flag status has changed. AD had $($SyncFlag). Updating"
+                $updater = $true
+            }
         }
         catch {
-            # The above can fail if the user has no aliases. Set update to true *just in case*
+            # The above can fail if the user has no roles. Set update to true *just in case*
             $updater = $true
         }
         if ($updater)
         {
             if ($PassiveMode)
             {
-                Write-Log "PassiveMode: Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $($roles -join ',') "
+                Write-Log "PassiveMode: Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $($roles -join ',') -extensionAttribute15 $ShouldSync "
             }
             else
             {
                 try {
-                    $junk = Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $roles -ErrorAction Stop
+                    $junk = Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $roles -extensionAttribute15 $ShouldSync -ErrorAction Stop
                 }
                 catch {
-                    Write-Log "Unable to update Roles for Exchange Mailbox ${username}: $_"
+                    Write-Log "Unable to update Roles or Sync flag for Exchange Mailbox ${username}: $_"
                     # For now, we'll ignore Role update failures in case there are other updates
                     # further down that still need to be applied 
                 }
