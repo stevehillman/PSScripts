@@ -381,7 +381,7 @@ function process-amaint-message($xmlmsg)
     if ($UpdateRoles)
     {
         $ExistingRoles = $mb.ExtensionCustomAttribute1
-        $SyncFlag = $mb.extensionAttribute15
+        $SyncFlag = $mb.CustomAttribute15
         $updater = $false
         $ShouldSync = "nosync"
         $Maillists = @($xmlmsg.syncLogin.login.maillists.ChildNodes.InnerText)
