@@ -419,7 +419,7 @@ function process-amaint-message($xmlmsg)
             else
             {
                 try {
-                    $junk = Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $roles -extensionAttribute15 $ShouldSync -ErrorAction Stop
+                    $junk = Set-Mailbox -Identity $scopedusername -ExtensionCustomAttribute1 $roles -CustomAttribute15 $ShouldSync -ErrorAction Stop
                 }
                 catch {
                     Write-Log "Unable to update Roles or Sync flag for Exchange Mailbox ${username}: $_"
