@@ -388,7 +388,10 @@ function process-amaint-message($xmlmsg)
 
 
         ### Logic for whether to sync a user to AzureAD is RIGHT HERE ###
-        if ($roles -contains "staff" -or $roles -contains "faculty" -or $Maillists -contains "its-m365-users")
+        # - roles is one of faculty or staff OR
+        # - user is on the its-m365-users list (has consented to be in M365) OR
+        # - user was previously synced (we don't turn off syncing of an account, as we don't want to delete any of their cloud data)
+        if ($roles -contains "staff" -or $roles -contains "faculty" -or $Maillists -contains "its-m365-users" -or $SyncFlag -eq "sync")
         {
             $ShouldSync = "sync"
         }
