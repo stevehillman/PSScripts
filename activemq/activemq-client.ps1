@@ -396,6 +396,12 @@ function process-amaint-message($xmlmsg)
             $ShouldSync = "sync"
         }
 
+        # Regardless of any other settings, if the user is in the its-m365-excludes group, remove them from AzureAD
+        if ($Maillists -contains "its-m365-excludes")
+        {
+            $ShouldSync = "nosync"
+        }
+
         # compare-object returns non-zero results if the arrays aren't identical. That's all we care about
         try {
             if (Compare-Object -ReferenceObject $ExistingRoles -DifferenceObject $roles)
