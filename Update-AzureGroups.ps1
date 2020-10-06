@@ -256,7 +256,7 @@ ForEach ($Group in $Groups)
             {
                 $n = [System.Math]::Ceiling( ($removes.Count / 1000) )
                 $Chunks = Split-Array -inArray $removes -parts $n
-                Write-Log "Adding $($removes.Count) members in $n chunks of max 1000"
+                Write-Log "Removing $($removes.Count) members in $n chunks of max 1000"
                 
                 foreach ($Chunk in $Chunks)
                 {
