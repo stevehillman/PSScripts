@@ -78,6 +78,27 @@ ForEach ($Group in $Groups)
             continue
         }
 
+        $rules = ""
+        $params = $Group.$CompositeAttribute.Split(';')
+        ForEach ($p in $params)
+        {
+            if ($p -notmatch "=")
+            {
+                $rules = $p
+                break
+            }
+            if ($p -match "MAILLISTS=")
+            {
+                $rules = $p -replace "MAILLISTS=",""
+                break
+            }
+        }
+
+        if ($rules -eq "")
+        {
+            Write-Log "Warning: Skipping $($Group.name). Rules for building membership appear to be missing"
+            continue
+        }
 
         # Gather the memberships from all of the component lists
         # The following are supported
@@ -86,7 +107,7 @@ ForEach ($Group in $Groups)
         # - '!listname'                 = members MUST be in this list to be included. Multiple '!listname's are ORd together
         # - '!listname1+listname2[+..]' = members MUST be in ALL of the specified lists to be included
 
-        $lists = $Group.$CompositeAttribute.Split(',')
+        $lists = $rules.Split(',')
         ForEach ($list in $lists)
         {
             if ($list -match '^\-')
