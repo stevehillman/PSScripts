@@ -14,9 +14,7 @@ $me = $env:username
 $SettingsFile = "C:\Users\$me\settings.json"
 $LogFile = "C:\Users\$me\m365teams.log"
 
-# Import modules we need
-Import-Module -Name MicrosoftTeams -NoClobber
-Import-Module -Name PSActiveMQClient
+
 
 function load-settings($s_file)
 {
@@ -27,6 +25,7 @@ function load-settings($s_file)
     $global:TeamsAdminPW = $settings.TeamsAdminPW
     $global:CompositeAttribute = $settings.AzureGroupsCompositeAttribute
 
+    $global:ActiveMQServer = $settings.ActiveMQServer
     $global:Username = $settings.amqUsername
     $global:Password = $settings.amqPassword
     $global:queueName = $settings.TeamsQueueName
@@ -38,11 +37,24 @@ function load-settings($s_file)
     $global:ErrorsToEmail = $settings.ErrorsToEmail
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
+    $global:MaxNoActivity = $settings.MaxNoActivity
 }
 
 function Write-Log($logmsg)
 {
     Add-Content $LogFile "$(date) : $logmsg"
+}
+
+try {
+    # Import modules we need
+    Import-Module -Name MicrosoftTeams -NoClobber
+    Import-Module -Name PSActiveMQClient
+    Import-Module -Name AzureAD
+}
+catch {
+    # If we get an error here, we can't really continue
+    Write-Log "Error loading modules: $($_.Exception)"
+    exit 1
 }
 
 
@@ -69,20 +81,40 @@ function process-message($xmlmsg)
     try {
         # Check for existing Team
         $team = Get-Team -DisplayName $teamname
-        if ($team -eq $null)
+        if ($team -ne $null)
         {
-            # Create team
-            $team = New-Team -DisplayName "$teamname" -Description "$descr" -Owner "$($owners[0])@sfu.ca" -ShowInTeamsSearchAndSuggestions $false `
-                    -MailNickname $mailnickname
-            Write-Log "Created new Team `"$teamname`" with GroupID $($team.GroupID)"
+            Write-Log "Team `"$teamname`" already exists"
         }
+        else
+        {
+            # see if the Team got half-created as a Group. MS docs say the default is to remove the backing
+            # group if team creation fails, but that doesn't seem to happen consistently.
+            $groupid = Get-AzureADGroup -SearchString "$teamname"
+            if ($groupid)
+            {
+                Write-Log "Warning: $teamname exists as a Group but not a Team. Attempting to create a team"
+                $team = New-Team -GroupID $groupid.ObjectID -Owner "$($owners[0])@sfu.ca"
+                $gid = $groupid.ObjectID
+            }
+            else
+            {
+                # Create team
+                $team = New-Team -DisplayName "$teamname" -Description "$descr" -Owner "$($owners[0])@sfu.ca" -ShowInTeamsSearchAndSuggestions $false `
+                        -MailNickname $mailnickname
+                $gid = $team.GroupID
+            }
+            Write-Log "Created new Team `"$teamname`" with GroupID $($team.GroupID)"
+
+        }
+        
     }
     catch {
         # If we get an error here, we can't really continue
-        Write-Log "Error retrieving or creating Team $teamname: $($_.Exception)"
+        Write-Log "Error retrieving or creating Team `"${teamname}`", mailNickname: `"$mailnickname`", Owner: `"$($owners[0])@sfu.ca`", Error: $($_.Exception)"
         return 0
     }
 
+    Write-Log "  Adding owners `"$($owners -join ",")`""
     try {
         # Add all owners, just in case
         foreach ($owner in $owners)
@@ -92,7 +124,7 @@ function process-message($xmlmsg)
     }
     catch {
         # If we get an error here, we can't really continue
-        Write-Log "Error adding Owners to $teamname: $($_.Exception)"
+        Write-Log "Error adding Owners to ${teamname}: $($_.Exception)"
         return 0
     }
 
@@ -110,19 +142,20 @@ function process-message($xmlmsg)
             if ($create -or $adgroup -eq $null)
             {
                 New-ADGroup -Name "M365 $($xmlmsg.teamsRequest.name)" -GroupCategory Security -GroupScope Global `
-                    -DisplayName "M365 $($xmlmsg.teamsRequest.name)" -Path $GroupsOU -Description "MAILLISTS=$maillists;TEAM=$($team.GroupdID)"
+                    -DisplayName "M365 $($xmlmsg.teamsRequest.name)" -Path $GroupsOU -Description "MAILLISTS=$maillists;TEAM=$($team.GroupID)"
                 
-                Write-Log "Created AD Group `"M365 $($xmlmsg.teamsRequest.name)`""
+                Write-Log "  Created AD Group `"M365 $($xmlmsg.teamsRequest.name)`""
             } 
             else
             {
+                Write-Log "  AD Group `"M365 $($xmlmsg.teamsRequest.name)`" already exists"
                 # Make sure the description is set correctly
                 $adgroup | Set-ADGroup -Description "MAILLISTS=$maillists;TEAM=$($team.GroupID)"
             }
         }
         catch {
             # If we get an error here, we can't really continue
-            Write-Log "Error creating AD Group for $teamname: $($_.Exception)"
+            Write-Log "Error creating AD Group for ${teamname}: $($_.Exception)"
             return 0
         }
     }
@@ -181,15 +214,14 @@ function retry-message($m)
 
 load-settings($SettingsFile)
 
-# Set up our Exchange shell
-$e_uri = $ExchangeServer + "/PowerShell/"
 try {
     # Set up AzureAD session
     # get credentials and login as AAD admin
-    $Password = $global:TeamsAdminPW | ConvertTo-SecureString -AsPlainText -Force
-    $UserCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $global:TeamsAdmin,$Password
+    $TeamsPassword = $global:TeamsAdminPW | ConvertTo-SecureString -AsPlainText -Force
+    $UserCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $global:TeamsAdmin,$TeamsPassword
 
     $junk = Connect-MicrosoftTeams -Credential $UserCredential
+    $junk = Connect-AzureAD -Credential $UserCredential
 }
 catch {
         write-log "Error connecting to MS Teams: "
@@ -199,14 +231,21 @@ catch {
 
 Write-Log "Starting up"
 
-$AMQSession = New-ActiveMQSession -Uri $ActiveMQServer -User $Username -Password $Password -ClientAcknowledge
+try {
+    $AMQSession = New-ActiveMQSession -Uri $ActiveMQServer -User $Username -Password $Password -ClientAcknowledge
 
-$Target = [Apache.NMS.Util.SessionUtil]::GetDestination($AMQSession, "queue://$queueName")
-$RetryTarget = [Apache.NMS.Util.SessionUtil]::GetDestination($AMQSession, "queue://$retryQueueName")
+    $Target = [Apache.NMS.Util.SessionUtil]::GetDestination($AMQSession, "queue://$queueName")
+    $RetryTarget = [Apache.NMS.Util.SessionUtil]::GetDestination($AMQSession, "queue://$retryQueueName")
 
-# Create a consumer with the target
-$Consumer =  $AMQSession.CreateConsumer($Target)
-$RetryConsumer = $AMQSession.CreateConsumer($RetryTarget)
+    # Create a consumer with the target
+    $Consumer =  $AMQSession.CreateConsumer($Target)
+    $RetryConsumer = $AMQSession.CreateConsumer($RetryTarget)
+}
+catch {
+    # If we get an error here, we can't really continue
+    Write-Log "Error connecting to ActiveMQ: $($_.Exception)"
+    exit 1
+}
 
 # Wait for a message. For now, we'll wait a really short time and 
 # if no message arrives, sleep before trying again. That way we can add more logic
@@ -220,7 +259,7 @@ $msg=""
 
 # Not running in daemon mode, don't loop forever. Run once and exit
 #while(1)
-{
+#{
     try {
         $isRetry = $false
         $Message = $Consumer.Receive([System.TimeSpan]::FromTicks(10000))
@@ -238,7 +277,7 @@ $msg=""
             # and so on. That way, if there's a failure in underlying infrastructure, the message should
             # still eventually get processed. 
             ##if ($loopcounter -gt $retryTimer)
-            {
+            #{
                 $Message = $RetryConsumer.Receive([System.TimeSpan]::FromTicks(10000))
                 # Only if no message was found, reset loop counter so that if there are 
                 # multiple messages to be tried, they'll all be tried at once
@@ -255,7 +294,7 @@ $msg=""
                 }
                 # Also reset the loop counter if last retrymsg failed, so that we back off properly.
                 elseif ($retryFailures) { $loopcounter = 1 }
-            }
+            #}
             if (!$Message)
             {
                 $noactivity++
@@ -336,7 +375,7 @@ $msg=""
         Remove-ActiveMQSession $AMQSession
         exit 0
     }
-}
+#}
 
 Remove-ActiveMQSession $AMQSession
 exit 0
