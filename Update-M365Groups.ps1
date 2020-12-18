@@ -76,7 +76,14 @@ ForEach ($Group in $Groups)
         }
         Write-Log "  $($Group.name) is linked to Team $AzureTeamGroup"
 
-        $AzureGroup = Get-AzureADGroup -SearchString $AzureTeamGroup -ErrorAction Stop
+        try {
+            $AzureGroup = Get-AzureADGroup -ObjectID $AzureTeamGroup -ErrorAction Stop
+        }
+        catch
+        {
+            $AzureGroup = Get-AzureADGroup -SearchString $AzureTeamGroup -ErrorAction Stop
+        }
+        
         if ($AzureGroup -is [array])
         {
             Write-Log "Can not process $($Group.Name). '$AzureTeamGroup' returns more than one M365 Group"
@@ -134,7 +141,7 @@ ForEach ($Group in $Groups)
 
         if ($removes.Count -gt 0 -or $adds.Count -gt 0)
         {
-            Write-Log "Processing $($adds.Count) Adds and $($removes.Count) Removes for $($AzureGroup.name)"
+            Write-Log "Processing $($adds.Count) Adds and $($removes.Count) Removes for $($AzureGroup.DisplayName)"
             if ($removes.Count -gt 0)
             {
                 foreach ($u in $removes)
