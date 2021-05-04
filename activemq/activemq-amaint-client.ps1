@@ -13,36 +13,11 @@ $LogFile = "C:\Users\$me\activemq_amaint_client.log"
 $SettingsFile = "C:\Users\$me\settings.json"
 $cipherfile = "C:\user_updates\amaintcipherkey"
 
-## The Chilkat DLL is needed for Blowfish decryption. It's a commercial license, to
+## The Chilkat DLL is needed for Blowfish decryption. It's a commercial license, so
 ## also needs to be "unlocked" at startup
 ## For details: https://www.chilkatsoft.com/refdoc/csCrypt2Ref.html
 Add-Type -Path ".\lib\ChilkatDotNet48.dll"
 
-## Unlock code taken from: https://www.example-code.com/powershell/global_unlock.asp
-# The Chilkat API can be unlocked for a fully-functional 30-day trial by passing any
-# string to the UnlockBundle method.  A program can unlock once at the start. Once unlocked,
-# all subsequently instantiated objects are created in the unlocked state. 
-# 
-# After licensing Chilkat, replace the "Anything for 30-day trial" with the purchased unlock code.
-# To verify the purchased unlock code was recognized, examine the contents of the LastErrorText
-# property after unlocking.  For example:
-$glob = New-Object Chilkat.Global
-$success = $glob.UnlockBundle("Anything for 30-day trial")
-if ($success -ne $true) {
-    $($glob.LastErrorText)
-    exit
-}
-
-$status = $glob.UnlockStatus
-if ($status -eq 2) {
-    $("Unlocked using purchased unlock code.")
-}
-else {
-    $("Unlocked in trial mode.")
-}
-
-# Define the Blowfish object
-$crypt = New-Object Chilkat.Crypt2
 
 
 ## Local private functions ##
@@ -67,10 +42,8 @@ function load-settings($s_file)
     $global:grouproles = @('staff','faculty','grad','undergrad')
     $global:UsersOU = $settings.UsersOU
     $global:GroupsOU = $settings.GroupsOU
+    $global:chilkatcode = $settings.chilkatcode
 }
-
-$global:ExcludedUsersDate = "00000000"
-
 
 function Write-Log($logmsg)
 {
@@ -96,30 +69,6 @@ function process-message($xmlmsg)
     }
 }
 
-# Compare two arrays for differences and return a Custom Object with two properties - an array of OnlyInOne and an array of OnlyInTwo
-# To achieve performance, we use the LINQ MS Framework. This is complete overkill for a few hundred members, but for lists with many 
-# thousands, it becomes significant. Code was shamelessly stolen from Stack Overflow
-#
-# https://stackoverflow.com/questions/6368386/comparing-two-arrays-get-the-values-which-are-not-common
-#
-# See here for more info on using LINQ with Powershell: https://www.red-gate.com/simple-talk/dotnet/net-framework/high-performance-powershell-linq/
-
-# This function has not yet been tested
-
-function compare-arrays($arrayobj1,$arrayobj2)
-{
-    # First, Cast as Strings, just in case they aren't
-    [string[]]$array1 = $arrayobj1
-    [string[]]$array2 = $arrayobj2
-    $onlyInOne = [string[]][Linq.Enumerable]::Except($array1, $array2)
-    $onlyInTwo = [string[]][Linq.Enumerable]::Except($array2, $array1)
-    $value = "" | Select-Object -Property OnlyInOne, OnlyInTwo
-    $value.OnlyInOne = $onlyInOne
-    $value.OnlyInTwo = $onlyInTwo
-
-    return $value
-}
-
 # Process an Amaint ActiveMQ message.
 # The logic as as follows:
 # - If the account is defined or pending create, skip - it has never existed in AD
@@ -133,7 +82,6 @@ function process-amaint-message($xmlmsg)
 
     $passive = ($global:PassiveMode -and -not ($global:testusers -contains $username))
 
-    # Skip lightweight and non-active accts
     $userenabled = $true
     if ($xmlmsg.syncLogin.login.status -ne "active")
     {
@@ -281,7 +229,17 @@ function process-amaint-message($xmlmsg)
     ### Update Existing (and newly created) Users ###
     # Displayname, firstname, lastname
     #
-    # Grab roles from Amaint, as that'll determine whether the user is anonymized or not
+    # Grab roles from Amaint message, as that'll determine whether the user is anonymized or not
+    # We currently use the sfuVisibility flag to determine anonymyization of students. It has 4 defined values
+    # 0 - super users only. End users do not see this option, and in AD, it's not implemented anyway
+    # 1 - SFU admins only (ITS admins - slightly higher than root)
+    # 5 - SFU Users - i.e not anonymous
+    # 10 - the world. This is historical, from when we had a publicly accessible LDAP directory
+    #
+    # If we wish to support anonymization in AzureAD, this list of options will likely grow and become more fine-grained. We will
+    # likely need to extend the Amaint schema (and hence the ActiveMQ XML message) to include additional fields for the anonymous name
+    #
+    # For now, just check whether sfuVisibility is greater than 4. If it is, don't anonymize. If it's not, use computing ID for all name fields
     $roles = @($xmlmsg.synclogin.person.roles.ChildNodes.InnerText)
     if ($roles -contains "staff" -or $roles -contains "faculty" -or $roles -contains "other" -or [int]$xmlmsg.synclogin.person.sfuVisibility -gt 4)
     {
@@ -307,7 +265,9 @@ function process-amaint-message($xmlmsg)
         DisplayName = $DisplayName
         Surname = $surname
         GivenName = $firstname
-        Replace = @{}
+        Replace = @{
+            accountExpires = 141848316000000000 # July 1, 2050.
+        }
         Clear = @()
     }
 
@@ -543,6 +503,33 @@ load-settings($SettingsFile)
 
 Write-Log "Starting up"
 
+## Unlock code taken from: https://www.example-code.com/powershell/global_unlock.asp
+# The Chilkat API can be unlocked for a fully-functional 30-day trial by passing any
+# string to the UnlockBundle method.  A program can unlock once at the start. Once unlocked,
+# all subsequently instantiated objects are created in the unlocked state. 
+# 
+# After licensing Chilkat, replace the "Anything for 30-day trial" with the purchased unlock code.
+# To verify the purchased unlock code was recognized, examine the contents of the LastErrorText
+# property after unlocking.  For example:
+$glob = New-Object Chilkat.Global
+$success = $glob.UnlockBundle($global:chilkatcode)
+if ($success -ne $true) {
+    $($glob.LastErrorText)
+    exit
+}
+
+$status = $glob.UnlockStatus
+if ($status -eq 2) {
+    $("Unlocked using purchased unlock code.")
+}
+else {
+    $("Unlocked in trial mode.")
+}
+
+# Define the Blowfish object
+$crypt = New-Object Chilkat.Crypt2
+
+
 ## Blowfish Cipher setup
 $crypt.CryptAlgorithm = "blowfish2"
 $crypt.CipherMode = "cbc"
@@ -641,7 +628,9 @@ while(1)
             Remove-Variable msg
             [xml]$msgtmp = $Message.Text
             $msg = $msgtmp.retryMessage
-            Write-Log "Retrying msg `r`n$($msgtmp.InnerXml)"
+            $logmsg = $msgtmp.InnerXml
+            $logmsg = $logmsg -replace "<cipher.*password>","###password redacted###"
+            Write-Log "Retrying msg `r`n$logmsg"
         }
         else
         {
@@ -652,7 +641,11 @@ while(1)
 
         $noactivity=0
 
-        if (-Not $isRetry) { Write-Log "Processing msg `r`n $($msg.InnerXml)" }
+        if (-Not $isRetry) { 
+            $logmsg = $msg.InnerXml
+            $logmsg = $logmsg -replace "<cipher.*password>","###password redacted###"
+            Write-Log "Processing msg `r`n $logmsg" 
+        }
         $rc = process-message($msg)
         Write-Log "RC = $rc"
         if ($rc -gt 0)
