@@ -9,8 +9,8 @@ $ErrorActionPreference = "Stop"
 Import-Module -Name PSActiveMQClient
 
 $me = $env:username
-$LogFile = "C:\Users\$me\activemq_amaint_client.log"
-$SettingsFile = "C:\Users\$me\settings.json"
+$LogFile = ".\activemq_amaint_client.log"
+$SettingsFile = ".\settings.json"
 $cipherfile = "C:\user_updates\amaintcipherkey"
 
 ## The Chilkat DLL is needed for Blowfish decryption. It's a commercial license, so
@@ -47,7 +47,7 @@ function load-settings($s_file)
 
 function Write-Log($logmsg)
 {
-    Add-Content $LogFile "$(date) : $logmsg"
+    Add-Content $LogFile "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') : $logmsg"
 }
 
 function process-message($xmlmsg)
@@ -102,7 +102,7 @@ function process-amaint-message($xmlmsg)
 
     # Verify the user in AD
     try {
-        $aduser = Get-ADUser $username -properties memberOf,uidNumber
+        $aduser = Get-ADUser $username -properties memberOf,uidNumber -Server $pdc
         $userexists = $true
     }
     catch {
@@ -145,12 +145,16 @@ function process-amaint-message($xmlmsg)
         try {
             if ($passive)
             {
-                Write-Log "$($aduser.samAccountName) | Disable-ADAccount"
+                Write-Log "$($aduser.samAccountName) | Disable-ADAccount -Server $pdc"
             }
             else
             {
-                Write-Log "Disabling $username"
-                $junk = $aduser | Disable-ADAccount
+                # Generate a random 24 char password using mixed-case alphanumerics
+                $newpassword = -join (((48..57)+(65..90)+(97..122)) * 80 |Get-Random -Count 24 |%{[char]$_})
+                $pwcred =  ConvertTo-SecureString "$newpassword" -AsPlainText -Force
+                Write-Log "Disabling $username and setting a random password"
+                $aduser | Set-ADAccountPassword -NewPassword $pwcred -Reset -Server $pdc
+                $aduser | Disable-ADAccount -Server $pdc
             }
         }
         catch {
@@ -205,16 +209,16 @@ function process-amaint-message($xmlmsg)
             if ($passive)
             {
                 Write-Log "Passive:mode New-ADUser $username -AccountPassword <redacted> -Path $global:UsersOU -SamAccountName $username  -UserPrincipalName $scopedusername"
-                Write-Log "   -PasswordNeverExpires $true -ProfilePath '\\%profileserver%\%profileshare%\%username%'"
+                Write-Log "   -PasswordNeverExpires $true -ProfilePath '\\%profileserver%\%profileshare%\%username%' -Server $($pdc)"
             }
             else
             {
                 Write-Log "Creating new AD account for $username"
                 $junk = New-ADUser $username -AccountPassword $pwcred -Path $global:UsersOU -SamAccountName $username -UserPrincipalName $scopedusername `
-                             -PasswordNeverExpires $true -ProfilePath '\\%profileserver%\%profileshare%\%username%'
+                             -PasswordNeverExpires $true -ProfilePath '\\%profileserver%\%profileshare%\%username%' -Server $pdc
                 # If we got here, the account got created without error. Enable it
-                $aduser = Get-ADUser $username -properties memberOf,uidNumber
-                $aduser | Set-ADUser -Enabled $true
+                $aduser = Get-ADUser $username -properties memberOf,uidNumber -Server $pdc
+                $aduser | Set-ADUser -Enabled $true -Server $pdc
             }
             $create = $true
         } catch {
@@ -284,9 +288,10 @@ function process-amaint-message($xmlmsg)
             # Need support for multi-valued phone number
             # Alan R's script took the *last* phone number and stuffed it into the Office Phone, so
             # we'll do the same. The rest will go into the otherTelephone attribute, which is multi-valued
-            $hasphones =  [System.Collections.ArrayList]$phone
+            $hasphones =  $phone
             $phone = $hasphones[-1]
-            $hasphones.RemoveAt($hasphones.IndexOf($phone))
+            # PS shortcut: Return all elements of the hasphones array that don't match $phone
+            $hasphones = $hasphones -ne $phone
         }
         $props += @{telephoneNumber = $phone; otherTelephone = $hasphones}
         $props += @{
@@ -361,13 +366,13 @@ function process-amaint-message($xmlmsg)
             if (-not $create)
             {
                 Write-Log "Setting user password"
-                $aduser | Set-ADAccountPassword -NewPassword $pwcred -Reset
+                $aduser | Set-ADAccountPassword -NewPassword $pwcred -Reset -Server $pdc
                 # If we wanted to, we could also unlock an AD account when we process an update, in case a previous bad
                 # password resulted in it getting locked:
                 # $aduser | Unlock-ADAccount
             }
             Write-Log "Setting attributes for $username - $($userprops | convertto-json) "
-            $aduser | Set-ADUser @userprops
+            $aduser | Set-ADUser @userprops -Server $pdc
         }
     } catch {
         # Unrecognized AD error. We can't continue
@@ -390,7 +395,7 @@ function process-amaint-message($xmlmsg)
                 else
                 {
                     Write-Log "Adding $username to is-lightweight Group"
-                    Add-ADGroupMember -Identity "cn=is-lightweight,$global:GroupsOU" -Members $username   
+                    Add-ADGroupMember -Identity "cn=is-lightweight,$global:GroupsOU" -Members $username -Server $pdc
                 }
             }
         }
@@ -404,7 +409,7 @@ function process-amaint-message($xmlmsg)
             else
             {
                 Write-Log "Removing $username from is-lightweight Group"
-                Remove-ADGroupMember -Identity "cn=is-lightweight,$global:GroupsOU" -Members $username -Confirm:$false
+                Remove-ADGroupMember -Identity "cn=is-lightweight,$global:GroupsOU" -Members $username -Confirm:$false -Server $pdc
             }
         }
         
@@ -420,7 +425,7 @@ function process-amaint-message($xmlmsg)
                 else
                 {
                     Write-Log "Removing $username from group is-$role"
-                    Remove-ADGroupMember -Identity "CN=SFU is-$role,$global:GroupsOU" -Members $username -Confirm:$False
+                    Remove-ADGroupMember -Identity "CN=SFU is-$role,$global:GroupsOU" -Members $username -Confirm:$False -Server $pdc
                 }
             }
             # Do adds
@@ -433,7 +438,7 @@ function process-amaint-message($xmlmsg)
                 else
                 {
                     Write-Log "Adding $username to group is-$role"
-                    Add-ADGroupMember -Identity "CN=SFU is-$role,$global:GroupsOU" -Members $username
+                    Add-ADGroupMember -Identity "CN=SFU is-$role,$global:GroupsOU" -Members $username -Server $pdc
                 }
             }
         }
@@ -555,6 +560,11 @@ $crypt.PaddingScheme = 4
 $crypt.EncodingMode = "base64"
 
 ## Done Blowfish setup
+
+## Fetch the domain controller we'll use
+$pdcobj = Get-ADDomainController -Discover -Service PrimaryDC
+$pdc = $pdcobj.HostName[0]
+Write-Log "Using $pdc for our domain controller"
 
 $AMQSession = New-ActiveMQSession -Uri $ActiveMQServer -User $Username -Password $Password -ClientAcknowledge
 
