@@ -66,7 +66,7 @@ function process-message($xmlmsg)
         return 1
     }
 
-    $teamname = "SFU Teams - $($xmlmsg.teamsRequest.name)"
+    $teamname = "$($xmlmsg.teamsRequest.name) - SFU Teams"
     $mailnickname = $teamname  -replace "[^A-Za-z0-9_-]",""
     $owners = $xmlmsg.teamsRequest.owners.Split(",")
     $descr = $xmlmsg.teamsRequest.description
@@ -78,6 +78,7 @@ function process-message($xmlmsg)
         $maillists = $xmlmsg.teamsRequest.maillists.ChildNodes.InnerText -join ","
     }
 
+    $trygroup = 0
     try {
         # Check for existing Team
         $team = Get-Team -DisplayName $teamname
@@ -89,11 +90,11 @@ function process-message($xmlmsg)
         {
             # see if the Team got half-created as a Group. MS docs say the default is to remove the backing
             # group if team creation fails, but that doesn't seem to happen consistently.
-            $groupid = Get-AzureADGroup -SearchString "$teamname"
+            $groupid = Get-AzureADGroup -filter "DisplayName eq '$teamname'"
             if ($groupid)
             {
                 Write-Log "Warning: $teamname exists as a Group but not a Team. Attempting to create a team"
-                $team = New-Team -GroupID $groupid.ObjectID -Owner "$($owners[0])@sfu.ca"
+                $team = New-Team -GroupID $groupid.ObjectID -Owner "$($owners[0])@sfu.ca" -ShowInTeamsSearchAndSuggestions $false 
                 $gid = $groupid.ObjectID
             }
             else
@@ -109,8 +110,30 @@ function process-message($xmlmsg)
         
     }
     catch {
-        # If we get an error here, we can't really continue
         Write-Log "Error retrieving or creating Team `"${teamname}`", mailNickname: `"$mailnickname`", Owner: `"$($owners[0])@sfu.ca`", Error: $($_.Exception)"
+        $errormsg = $_.Exception.Message
+        $trygroup = 1
+    }
+
+    if ($trygroup)
+    {
+        try {
+            if ($errormsg -match "The displayName cannot contain the blocked word")
+            {
+                # This code is left here, but commented out, as it won't work with our
+                # current tenant. The New-AzureADGroup command can't be used to create a Teams-backing group
+                
+                # Write-Log "Attempting to create the backing group '$teamname' first"
+                # Using a blocked/reserved word in the Team name. Since it has already been approved,
+                # try creating the AzureAD group first
+                # $junk = New-AzureADGroup -DisplayName "$teamname" -Description "$descr"
+            } 
+            # Even if this succeeds, we'll treat Team creation as a failure and let the retry handle the team creation
+        }
+        catch {
+            # Nothing more to report
+        }
+        
         return 0
     }
 
