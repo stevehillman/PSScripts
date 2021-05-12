@@ -177,7 +177,8 @@ function process-amaint-message($xmlmsg)
     }
     if ($cipherpw -and $cipherpw -ne "")
     {
-        $newpassword = $crypt.DecryptStringENC($cipherpw)
+        # Despite specifying padding of 'space', Chilkat lib still leaves the spaces there. We must trim them ourselves
+        $newpassword = $crypt.DecryptStringENC($cipherpw).trimEnd()
         if ($newpassword.length -lt 6)
         {
             # This should never happen, so don't let it.
@@ -186,7 +187,7 @@ function process-amaint-message($xmlmsg)
         }
         if ($global:testusers -contains $username)
         {
-            Write-Log " TestUser: password decrypted to $newpassword"
+            Write-Log " TestUser: password decrypted to `"$newpassword`""
         }
     }
     else
