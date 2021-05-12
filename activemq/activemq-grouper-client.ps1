@@ -1,16 +1,12 @@
-﻿#
-# A powershell script to read from any ActiveMq provider
+﻿# A powershell script to read from any ActiveMq provider
 # 
-
-# Ensure that Exchange cmdlets throw a catchable error when they fail
 $ErrorActionPreference = "Stop"
 
-
 Import-Module -Name PSActiveMQClient
-Import-Module -Name PSAOBRestClient
+Import-Module -Name PSGrouperClient
 
 $me = $env:username
-$LogFile = "C:\Users\$me\activemq_client.log"
+$LogFile = "C:\Users\$me\activemq_grouper_client.log"
 $SettingsFile = "C:\Users\$me\settings.json"
 
 
@@ -24,6 +20,10 @@ function load-settings($s_file)
     $global:Password = $settings.amqPassword
     $global:queueName = $settings.GrouperQueueName
     $global:retryQueueName = $settings.GrouperRetryQueueName
+    $global:GrouperUser = $settings.GrouperUser
+    $global:GrouperPassword = $settings.GrouperPassword
+    $global:GroupsOU = $settings.GroupsOU
+    $global:UsersOU = $settings.UsersOU
     $global:RestToken = $settings.RestToken
     $global:MaxRetries = $settings.MaxRetries
     $global:MaxRetryTimer = $settings.MaxRetryTimer
@@ -31,28 +31,69 @@ function load-settings($s_file)
     $global:ErrorsToEmail = $settings.ErrorsToEmail
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
-    $global:PassiveMode = ($settings.PassiveMode -eq "true")
+    $global:PassiveMode = ($settings.GrouperPassiveMode -ne "false")
     
 }
 
-$global:ExcludedUsersDate = "00000000"
-
-
 function Write-Log($logmsg)
 {
-    Add-Content $LogFile "$(date) : $logmsg"
+    Add-Content $LogFile "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') : $logmsg"
 }
 
-function process-message($xmlmsg)
+function Split-array 
 {
-    if ($msg.synclogin)
+
+<#  
+  .SYNOPSIS   
+    Split an array
+  .NOTES
+    Version : July 2, 2017 - implemented suggestions from ShadowSHarmon for performance   
+  .PARAMETER inArray
+   A one dimensional array you want to split
+  .EXAMPLE  
+   Split-array -inArray @(1,2,3,4,5,6,7,8,9,10) -parts 3
+  .EXAMPLE  
+   Split-array -inArray @(1,2,3,4,5,6,7,8,9,10) -size 3
+#> 
+
+  param($inArray,[int]$parts,[int]$size)
+  
+  if ($parts) {
+    $PartSize = [Math]::Ceiling($inArray.count / $parts)
+  } 
+  if ($size) {
+    $PartSize = $size
+    $parts = [Math]::Ceiling($inArray.count / $size)
+  }
+
+  $outArray = New-Object 'System.Collections.Generic.List[psobject]'
+
+  for ($i=1; $i -le $parts; $i++) {
+    $start = (($i-1)*$PartSize)
+    $end = (($i)*$PartSize) - 1
+    if ($end -ge $inArray.count) {$end = $inArray.count -1}
+	$outArray.Add(@($inArray[$start..$end]))
+  }
+  return ,$outArray
+
+}
+
+function process-message($jsonmsg)
+{
+    # All Grouper messages are esbEvent messages, so this better never fail
+    # esbEvent is actually an array. Grouper only supports one event at a time
+    # but could support more in the future
+    if ($jsonmsg.esbEvent)
     {
-        $global:now = Get-Date -Format FileDate
-        return process-amaint-message($xmlmsg)
-    }
-    elseif ($msg.compromisedlogin)
-    {
-        return process-compromised-message($xmlmsg)
+        ForEach ($esbEvent in $jsonmsg.esbEvent)
+        {
+            $rc = process-grouper-message($esbEvent)
+            if ($rc -eq 0)
+            {
+                return 0
+            }
+        }
+        return 1
     }
     # Add other message types here in the future
     else
@@ -72,7 +113,7 @@ function process-message($xmlmsg)
 
 # This function has not yet been tested
 
-function compare-arrays($arrayobj1,$arrayobj2)
+function compare-arrays($arrayobj1, $arrayobj2)
 {
     # First, Cast as Strings, just in case they aren't
     [string[]]$array1 = $arrayobj1
@@ -102,81 +143,222 @@ function compare-arrays($arrayobj1,$arrayobj2)
 #
 # As such, this code has nothing to process yet, as we don't want to continue the process of using FTP to move data
 #
-# In order to simplify the AMQ code, we should consider stripping it down to a more basic level of functionality - just
-# send the group names, once per minute, in AMQ messages. If we do that, the below code then needs to:
+# In order to simplify the AMQ code, we will strip it down - just send the group names, once per minute, in AMQ messages. 
+# The below code then needs to:
 # - decode the message (Grouper messages are JSON, not XML, so it's a bit different)
-# - Fetch parent groups via AmaintRest
-# - Use AOBRest to fetch the members of each (I think AmaintRest does not flatten the memberships, so isn't what we want here)
-# - compare the membership with what is currently in AD
-# - apply changes in chunks
+# - Fetch parent groups via GrouperRest
+# - Iterate through each resulting group and
+#   - if it doesn't have the ADGroup flag set, skip
+#   - fetch the flattened membership of the group from Grouper
+#   - compare the membership with what is currently in AD
+#   - apply changes in chunks
 
+ 
 
-
-function process-grouper-message($xmlmsg)
+function process-grouper-message($esbEvent)
 {
-    # Parse JSON message
-    $GroupName = 
+    $GroupName = $esbEvent.groupName
+    # Fetch this group's details
+    $ThisGroup = Get-GrouperGroup -Group $GroupName -Username $global:GrouperUser -Password $global:GrouperPassword
+    
+    # Add it to the (empty) list of groups to process
+    $PotentialGroups = @($ThisGroup)
 
-    # Fetch the parent groups OR start supporting nested groups. If we support nested groups, parent groups would have this group as a member
-    # so they wouldn't need updating
-    $ParentGroups = call_to_amaint_rest_to_Get_parent_groups($GroupName)
+    # Fetch the parent groups. If there are any, add them
+    $resp = Get-GrouperMemberships -Group $GroupName -Username $global:GrouperUser -Password $global:GrouperPassword
+    if ($resp.Count)
+    {
+        $PotentialGroups = $PotentialGroups + $resp
+    }
 
-    ForEach ($Pgroup in $ParentGroups) {
-        # Do we need to format PGroup as a DN for the ADGroup commands? Needs testing
+    $UpdateGroups = @()
 
-        # If it's an add or update, test to see whether group exists
+    # Look at the resulting list of groups and see which ones we care about
+    # Grouper group attributes are a bit weird. They're contained in two separate arrays - the attribute names in
+    # one, and the attribute values in another, with the same corresponding index value. So see if the attribute
+    # name exists, and if it does, use its index to fetch the corresponding value
+    ForEach ($PGroup in $PotentialGroups)
+    {
+        if ($PGroup.detail.attributeNames -contains "sfuIsADGroup" -and 
+            $PGroup.detail.attributeValues[[array]::indexof($PGroup.detail.attributeNames,"sfuIsADGroup")] -eq 1)
+        {
+            $UpdateGroups = $UpdateGroups + @($PGroup.name)
+        }    
+        else
+        {
+            # Group is not an AD group. We should test to see whether it exists in AD. If it does, it needs to be deleted
+            # TODO: Process group deletes
+        }
+    }
+
+    # Quick return if there's nothing to do
+    if ($UpdateGroups.count -eq 0)
+    {
+        Write-Log "$($ThisGroup.name) is not an AD group and does not belong to any AD groups. Skipping"
+        return 1
+    }
+
+    # We have our list of groups to sync. For each group, fetch the flattened memberships from Grouper
+    # and the current members from AD and compare. If the group doesn't exist in AD yet, create it.
+    ForEach ($Pgroup in $UpdateGroups) {
+        # Group names will be in grouper naming format (stem:groupname).
+        # In the (near?) future, we will likely need to support multiple stems and
+        # update different OUs based on that. E.g.
+        # - AzureGroups
+        # - Teams
+        # - Exchange DLs
+        #
+        # For now, we'll only process groups in the Maillist stem, so skip any others
+        if ($PGroup -notmatch "^maillist:")
+        {
+            Write-Log "Skipping non-maillist group $PGroup"
+            continue
+        }
+
+        $ADGroupName =  "CN=" + $PGroup.Substring($PGroup.lastindexof(':')+1) + "," + $global:GroupsOU
+        Write-Log "  Processing $ADGroupName"
+
+        # If it's an add or update, test to see whether group exists. Fetch the members while we're at it
+        $groupexists = $true
         try {
-            $ADGroup = Get-ADGroup $PGroup -ErrorAction Stop
+            $ADGroup = Get-ADGroup $ADGroupName -Properties members -Server $pdc -ErrorAction Stop
         }
         catch {
-            # Group doesn't exist (maybe?). Create it
-            Write-Log "Group $PGroup doesn't exist. Attempting to create it"
-            try {
-                Add-ADGroup $PGroup - Syntax for specifying OU? -ErrorAction Stop
-                Write-Log "Group $PGroup created"
+            if ($_.CategoryInfo.Category -eq "ObjectNotFound")
+            {
+                $groupexists = $false
             }
-            catch {
-                Oh Oh. Cant continue.. Log error and return failure.
+            else
+            {
+                # Unrecognized AD error. We can't continue
+                $global:LastError = "Error fetching $ADGroupName in AD. Failing: $_"
+                Write-Log $LastError
+                return 0
             }
         }
-        # Fetch memberships
-        $ADGroupMembers = Get-ADGroupMembers $PGroup
-        # These probably then need processing into a simple array of sAMAccountNames that can be compared against Amaint
-        $MLGroupMembers = Get-AOBRestMaillistMembers -Maillist $PGroup -AuthToken $RestToken
-        $AddsDrops = compare-arrays($ADGroupMembers,$MLGroupMembers)
-        $toAdd = $AddsDrops.OnlyInTwo
-        $toDrop = $AddsDrops.OnlyInOne
 
-        if ($ToAdd)
+        if (-not $groupexists)
+        {
+            # Group doesn't exist. Create it
+            Write-Log "Group $ADGroupName doesn't exist. Attempting to create it"
+            try {
+                if ($global:PassiveMode)
+                {
+                    Write-Log "PassiveMode: New-ADGroup $ADGroupName -Path $global:GroupsOU -Server $pdc"
+                    $ADGroup = @{
+                        members = @()
+                    }
+                }
+                else
+                {
+                    New-ADGroup $ADGroupName -Path $global:GroupsOU -Server $pdc -ErrorAction Stop
+                    Write-Log "Group $ADGroupName created"
+                    $ADGroup = Get-ADGroup $ADGroupName -Properties members -Server $pdc -ErrorAction Stop
+                }
+            }
+            catch {
+                # Unrecognized AD error. We can't continue
+                $global:LastError = "Error creating $ADGroupName in AD. Failing: $_"
+                Write-Log $LastError
+                return 0
+            }
+        }
+        Write-Log "    Fetched $($ADGroup.members.count) members from AD"
+
+        # Fetch Grouper memberships
+        $GrouperGroup = Get-GrouperGroup -Group $PGroup -Members -OnlyUsers -Username $global:GrouperUser -Password $global:GrouperPassword
+        Write-Log "    Fetched $($GrouperGroup.members.count) members from Grouper"
+        
+        # Convert Grouper memberships (userIDs) into AD memberships. For now this just means converting them into Distinguished Names
+        # Arrays aren't dynamically resizeable, so use a hash - this has proven fast in other cases
+        $GrouperMembers = @{}
+        ForEach ($gm in $GrouperGroup.Members)
+        {
+            $GrouperMembers["CN=$gm,$global:UsersOU"] = 1
+        }
+        Write-Log "      Converted to ADUsers array" # This can be removed later - it's only here for performance calculation purposes
+
+        # compare-arrays doesn't work if either array is empty, so only use it if both sides have some members
+        if ($ADGroup.Members.Count -gt 0 -and $GrouperGroup.Members.Count -gt 0)
+        {
+            # Now pass both arrays to our fast array comparator to produce two lists of diffs
+            # We use "PSBase.Keys" JUST IN CASE there's a user named "keys"
+            $AddsDrops = compare-arrays $ADGroup.Members.toLower() $GrouperMembers.PSBase.Keys.toLower()
+            $toAdd = $AddsDrops.OnlyInTwo
+            $toDrop = $AddsDrops.OnlyInOne
+        }
+        else
+        {
+            if ($ADGroup.Members.Count -eq 0)
+            {
+                # New or empty AD group needs populating
+                $toAdd = $GrouperMembers.PSBase.Keys
+                $toDrop = @()
+            }
+            else
+            {
+                # AD group needs emptying out
+                # This should actually be a warning - we may not want to process this, in case the empty group
+                # was actually a failure from Grouper
+                $toAdd = @()
+                $toDrop = $ADGroup.Members
+            }
+        }
+
+        if ($ToAdd.Count)
         {
             $n = [System.Math]::Ceiling( ($ToAdd.Count / 1000) )
             $Chunks = Split-Array -Array $ToAdd -Chunks $n
             Write-Log "Adding $($toAdd.Count) members in $n chunks of max 1000"
-            
-            foreach ($Chunk in $Chunks)
+            if ($toAdd.Count -gt 10)
             {
-                try { 
-                    Add-ADGroupMember -Identity $PGroup -Members $Chunk  -ErrorAction Stop 
-                }
-                catch { 
-                    If this fails, cant continue. Log error and return failure.
+                $addlog = $toAdd[0..10] -join "`r`n"
+            }
+            else
+            {
+                $addlog = $toAdd -join "`r`n"
+            }
+            Write-Log "  Adding users: $addlog"
+            if (-not $global:PassiveMode)
+            {
+                foreach ($Chunk in $Chunks)
+                {
+                    try { 
+                        Add-ADGroupMember -Identity $ADGroupName -Members $Chunk  -ErrorAction Stop 
+                    }
+                    catch { 
+                        Write-Log "Error adding users to $ADGroupName : $_"
+                        return 0
+                    }
                 }
             }
         }
-        if ($toDrop)
+        if ($toDrop.Count)
         {
             $n = [System.Math]::Ceiling( ($toDrop.Count / 1000) )
             $Chunks = Split-Array -Array $toDrop -Chunks $n
             Write-Log "Removing $($toDrop.Count) members in $n chunks of max 1000"
-
-            
-            foreach ($Chunk in $Chunks)
+            if ($toDrop.Count -gt 10)
             {
-                try { 
-                    Add-ADGroupMember -Identity $PGroup -Members $Chunk  -ErrorAction Stop 
-                }
-                catch { 
-                    If this fails, cant continue. Log error and return failure.
+                $addlog = $toDrop[0..10] -join "`r`n"
+            }
+            else
+            {
+                $addlog = $toDrop -join "`r`n"
+            }
+            Write-Log "  Removing users: $addlog"
+
+            if (-not $global:PassiveMode)
+            {
+                foreach ($Chunk in $Chunks)
+                {
+                    try { 
+                        Remove-ADGroupMember -Identity $ADGroupName -Members $Chunk  -ErrorAction Stop 
+                    }
+                    catch { 
+                        Write-Log "Error removing users from $ADGroupName : $_"
+                        return 0
+                    }
                 }
             }
         }
@@ -192,35 +374,34 @@ function process-grouper-message($xmlmsg)
 # add a retry count tag.
 function retry-message($m)
 {
-    [xml]$mtmp = $m.Text
+    $mtmp = $m.Text | ConvertFrom-Json -Depth 10
     $firstRetry = $false
     # Add a retry counter if one isn't already there
-    if (! $mtmp.retryMessage.count)
+    if (! $mtmp.retryCount)
     {
-        # This is a bit clunky - couldn't find a good way to insert a
-        # counter into the XML message so we'll create a new "retry" message type with a counter element
-        [xml]$retrymsg = "<retryMessage><count>1</count>" + $mtmp.InnerXml + "</retryMessage>"
-        $mtmp = $retrymsg
+        $mtmp | Add-Member -NotePropertyName retryCount -NotePropertyValue 1
     }
     # Otherwise add one to the retry count
     else
     {
-        $count = [int]$mtmp.retryMessage.count
+        $count = [int]$mtmp.retryCount
         if ($count -eq 1)
         {
             $firstRetry = $true
         }
         $count++
-        $mtmp.retryMessage.count = "$count"
+        $mtmp.retryCount = "$count"
     }
 
-    if ([int]$mtmp.retryMessage.count -gt $MaxRetries)
+    if ([int]$mtmp.retryCount -gt $MaxRetries)
     {
-        Write-Log "FAIL. Max retries exceeded for $($mtmp.InnerXml)"
+        Write-Log "FAIL. Max retries exceeded for $($m.Text)"
         return 0
     }
 
-    Send-ActiveMQMessage -Queue $retryQueueName -Session $AMQSession -Message $mtmp
+    $outmsg = $mtmp | ConvertTo-Json -Depth 10
+
+    Send-ActiveMQMessage -Queue $retryQueueName -Session $AMQSession -Message $outmsg
 
     if ($firstRetry)
     {
@@ -239,6 +420,11 @@ function retry-message($m)
 load-settings($SettingsFile)
 
 Write-Log "Starting up"
+
+## Fetch the domain controller we'll use
+$pdcobj = Get-ADDomainController -Discover -Service PrimaryDC
+$pdc = $pdcobj.HostName[0]
+Write-Log "Using $pdc for our domain controller"
 
 $AMQSession = New-ActiveMQSession -Uri $ActiveMQServer -User $Username -Password $Password -ClientAcknowledge
 
@@ -298,7 +484,7 @@ while(1)
                 if ($noactivity -gt $MaxNoActivity)
                 {
                     $noactivity=0
-                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "No activity from ActiveMQ for $MaxNoActivity seconds" `
+                    Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "No Grouper activity from ActiveMQ for $MaxNoActivity seconds" `
                     -SmtpServer $SmtpServer -Body "Seems a bit fishy."
                 }
                 Start-Sleep -Seconds 1
@@ -309,20 +495,19 @@ while(1)
             $isRetry=$true
             # undef the msg variable before defining it, because retry msgs and regular msgs are slightly different object types
             Remove-Variable msg
-            [xml]$msgtmp = $Message.Text
-            $msg = $msgtmp.retryMessage
-            Write-Log "Retrying msg `r`n$($msgtmp.InnerXml)"
+            $msg = $Message.Text | ConvertFrom-Json
+            Write-Log "Retrying msg `r`n$($Message.Text)"
         }
         else
         {
             # undef the msg variable before defining it, because retry msgs and regular msgs are slightly different object types
             Remove-Variable msg
-            [xml]$msg = $Message.Text
+            $msg = $Message.Text | ConvertFrom-Json
         }
 
         $noactivity=0
 
-        if (-Not $isRetry) { Write-Log "Processing msg `r`n $($msg.InnerXml)" }
+        if (-Not $isRetry) { Write-Log "Processing msg `r`n $($Message.Text)" }
         $rc = process-message($msg)
         Write-Log "RC = $rc"
         if ($rc -gt 0)
@@ -358,7 +543,7 @@ while(1)
             $Message.Acknowledge()
             if ($rc -eq 0)
             {
-                Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Failure from Exchange ActiveMQ handler" `
+                Send-MailMessage -From $ErrorsFromEmail -To $ErrorsToEmail -Subject "Failure from Grouper ActiveMQ handler" `
                     -SmtpServer $SmtpServer -Body "Failed to process message $MaxRetries time.`r`nMessage: $($Message.Text). `r`nLast Error: $LastError"
             }
         }
@@ -369,7 +554,6 @@ while(1)
         # Realistically, we want to log errors but try to recover
         # For now we'll just exit and let Windows Scheduler restart us
         write-host "Caught error. Closing sessions"
-        Remove-PSSession $ESession
         Remove-ActiveMQSession $AMQSession
         exit 0
     }
