@@ -57,10 +57,7 @@ function process-message($xmlmsg)
         $global:now = Get-Date -Format FileDate
         return process-amaint-message($xmlmsg)
     }
-    elseif ($msg.compromisedlogin)
-    {
-        return process-compromised-message($xmlmsg)
-    }
+    
     # Add other message types here in the future
     else
     {
@@ -373,7 +370,7 @@ function process-amaint-message($xmlmsg)
                 # $aduser | Unlock-ADAccount
             }
             Write-Log "Setting attributes for $username - $($userprops | convertto-json) "
-            $aduser | Set-ADUser @userprops -Server $pdc
+            $aduser | Set-ADUser @userprops -Server $pdc -Enabled $true
         }
     } catch {
         # Unrecognized AD error. We can't continue
