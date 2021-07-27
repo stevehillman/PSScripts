@@ -269,6 +269,7 @@ function process-amaint-message($xmlmsg)
         GivenName = $firstname
         Replace = @{
             accountExpires = 141848316000000000 # July 1, 2050.
+            mail = $scopedusername
         }
         Clear = @()
     }
