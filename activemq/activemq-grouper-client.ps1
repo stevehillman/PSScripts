@@ -74,8 +74,34 @@ function Split-array
     if ($end -ge $inArray.count) {$end = $inArray.count -1}
 	$outArray.Add(@($inArray[$start..$end]))
   }
-  return ,$outArray
+  return $outArray
 
+}
+
+# Scan an array of users to see if they exist in AD. Return an array of those that do.
+# Since AD users are never deleted (today, anyway), we can cache successes and skip them next time
+
+$GoodUserLookup = @{}
+
+function Check-ADUsers($UserArray)
+{
+    $GoodUsers = @{}
+    ForEach ($adu in $UserArray)
+    {
+        if ($GoodUserLookup[$adu] -eq 1)
+        {
+            Continue
+        }
+        try {
+            $junk = Get-ADUser $adu -Server $pdc -ErrorAction Stop 
+        }
+        catch {
+            continue
+        }
+        $GoodUsers[$adu] = 1
+        $GoodUserLookup[$adu] = 1
+    }
+    return $GoodUsers.PSBase.Keys
 }
 
 function process-message($jsonmsg)
@@ -251,7 +277,7 @@ function process-grouper-message($esbEvent)
                 }
                 else
                 {
-                    New-ADGroup $ADGroupName -Path $global:GroupsOU -Server $pdc -ErrorAction Stop
+                    New-ADGroup $ADGroupName -Path $global:GroupsOU -GroupCategory Security -GroupScope Global -Server $pdc -ErrorAction Stop
                     Write-Log "Group $ADGroupName created"
                     $ADGroup = Get-ADGroup $ADGroupName -Properties members -Server $pdc -ErrorAction Stop
                 }
@@ -305,10 +331,22 @@ function process-grouper-message($esbEvent)
             }
         }
 
+        # If there are Adds or Drops, break them up into chunks with each chunk containing 1000 users
         if ($ToAdd.Count)
         {
             $n = [System.Math]::Ceiling( ($ToAdd.Count / 1000) )
-            $Chunks = Split-Array -Array $ToAdd -Chunks $n
+            # Work around a powershell idiosynchracy: if the number of resulting chunks is one,
+            # powershell will replace the array of arrays with a single array, screwing up our for loop below.
+            # So force it to create an array of arrays
+            if ($n -eq 1)
+            {
+                $Chunks = @("junk")
+                $Chunks[0] = $toAdd
+            }
+            else
+            {
+                $Chunks = Split-Array -inArray $ToAdd -parts $n
+            }
             Write-Log "Adding $($toAdd.Count) members in $n chunks of max 1000"
             if ($toAdd.Count -gt 10)
             {
@@ -318,17 +356,44 @@ function process-grouper-message($esbEvent)
             {
                 $addlog = $toAdd -join "`r`n"
             }
-            Write-Log "  Adding users: $addlog"
-            if (-not $global:PassiveMode)
+            Write-Log "  Chunks: $($Chunks.count). Adding users: $addlog"
+            foreach ($Chunk in $Chunks)
             {
-                foreach ($Chunk in $Chunks)
-                {
-                    try { 
-                        Add-ADGroupMember -Identity $ADGroupName -Members $Chunk  -ErrorAction Stop 
+                $retryadd = 0
+                try { 
+                    Add-ADGroupMember -Identity $ADGroupName -Members $Chunk -Server $pdc -ErrorAction Stop -WhatIf:$global:PassiveMode
+                }
+                catch { 
+                    if ($_.CategoryInfo.Category -eq "ObjectNotFound" -and $_.CategoryInfo.TargetType -eq "ADPrincipal")
+                    {
+                        # One or more members doesn't exist in AD
+                        $retryadd = 1
+                        Write-Log "Error: Chunk has non-existent users"
                     }
-                    catch { 
+                    else
+                    {
                         Write-Log "Error adding users to $ADGroupName : $_"
                         return 0
+                    }
+                }
+                if ($retryadd)
+                {
+                    # Remove the non-existent users from this chunk and try again
+                    $checkedChunk = Check-ADUsers $Chunk
+                    if ($checkedChunk.count -gt 0)
+                    {
+                        Write-Log "  Trying again with $($checkedChunk.count) users in Chunk"
+                        try { 
+                            Add-ADGroupMember -Identity $ADGroupName -Members $checkedChunk -Server $pdc -ErrorAction Stop -WhatIf:$global:PassiveMode
+                        }
+                        catch { 
+                            Write-Log "Error adding users to $ADGroupName : $_"
+                            return 0
+                        }
+                    }
+                    else
+                    {
+                        Write-Log "  After removing invalid users, none left to add"
                     }
                 }
             }
@@ -336,7 +401,15 @@ function process-grouper-message($esbEvent)
         if ($toDrop.Count)
         {
             $n = [System.Math]::Ceiling( ($toDrop.Count / 1000) )
-            $Chunks = Split-Array -Array $toDrop -Chunks $n
+            if ($n -eq 1)
+            {
+                $Chunks = @("junk")
+                $Chunks[0] = $toDrop
+            }
+            else
+            {
+                $Chunks = Split-Array -inArray $ToDrop -parts $n
+            }
             Write-Log "Removing $($toDrop.Count) members in $n chunks of max 1000"
             if ($toDrop.Count -gt 10)
             {
@@ -352,8 +425,9 @@ function process-grouper-message($esbEvent)
             {
                 foreach ($Chunk in $Chunks)
                 {
+                    $retryrm = 0
                     try { 
-                        Remove-ADGroupMember -Identity $ADGroupName -Members $Chunk  -ErrorAction Stop 
+                        Remove-ADGroupMember -Identity $ADGroupName -Members $Chunk -Server $pdc -ErrorAction Stop -Confirm:$false
                     }
                     catch { 
                         Write-Log "Error removing users from $ADGroupName : $_"
@@ -374,7 +448,7 @@ function process-grouper-message($esbEvent)
 # add a retry count tag.
 function retry-message($m)
 {
-    $mtmp = $m.Text | ConvertFrom-Json -Depth 10
+    $mtmp = $m.Text | ConvertFrom-Json
     $firstRetry = $false
     # Add a retry counter if one isn't already there
     if (! $mtmp.retryCount)
