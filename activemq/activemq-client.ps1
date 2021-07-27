@@ -305,10 +305,19 @@ function process-amaint-message($xmlmsg)
         $aduser = Get-ADUser $username
     }
     catch {
-        # Either they don't exist or there's an AD error. Either way we can't continue
-        $global:LastError = "$username not found in AD. Failing: $_"
-        Write-Log $LastError
-        return 0
+        if ($_.CategoryInfo.Category -eq "ObjectNotFound" -and -not $mbenabled)
+        {
+            # Continue, in case the user has a mailbox but no longer has an AD account (can that happen?)
+            # Code further down will catch a non-existent mailbox and exit without error
+            Write-Log "Disabled/Destroyed user $username not in AD. Checking whether mailbox needs disabling"
+        }
+        else
+        {
+            # Either they don't exist or there's an AD error. Either way we can't continue
+            $global:LastError = "$username not found in AD. Failing: $_"
+            Write-Log $LastError
+            return 0
+        }
     }
 
     $create = $false
