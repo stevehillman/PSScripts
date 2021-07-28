@@ -60,7 +60,12 @@ $failcount = 0
 
 $global:now = Get-Date -Format FileDate
 
-$Mailboxes = Get-Mailbox -ResultSize unlimited | Where {$_.PrimarySmtpAddress -match "_disabled@sfu.ca"}
+## Fetch the domain controller we'll use
+$pdcobj = Get-ADDomainController -Discover -Service PrimaryDC
+$pdc = $pdcobj.HostName[0]
+Write-Log "Using $pdc for our domain controller"
+
+$Mailboxes = Get-Mailbox -ResultSize Unlimited | Where {$_.PrimarySmtpAddress -match "_disabled@sfu.ca"}
 
 ForEach ($Mbox in $Mailboxes)
 {
@@ -77,10 +82,17 @@ ForEach ($Mbox in $Mailboxes)
             if ($DestroyDate -lt ($now - 10000))
             {
                 Write-Log "User $($mbox.SamAccountName) went lightweight or destroyed more than a year ago. Disabling mailbox"
+                # Save the state of our custom Exchange attribute(s), as "Disable-Mailbox" will nuke them
+                # This won't be necessary if we decide in the future that lightweight/destroyed accounts shouldn't get M365 access.
+                $ADUser = Get-ADUser $mbox.SamAccountName -Properties extensionAttribute15 -Server $pdc
                 if (-Not $PassiveMode)
                 {
-                    $Mbox | Disable-Mailbox
+                    $Mbox | Disable-Mailbox -Confirm:$False -DomainController $pdc
                     $report = $report + "Disabled mailbox for $($mbox.SamAccountName)"
+                    if ($ADUser.extensionAttribute15 -match "sync")
+                    {
+                        $ADUser | Set-ADUser -Add @{extensionAttribute15=$ADUser.extensionAttribute15} -Server $pdc
+                    }
                 }
                 $destroycount++
             }
