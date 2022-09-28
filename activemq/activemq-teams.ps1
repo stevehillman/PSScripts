@@ -21,8 +21,8 @@ function load-settings($s_file)
     $settings = ConvertFrom-Json ((Get-Content $s_file) -join "")
     $global:RestToken = $settings.RestToken
     $global:GroupsOU = $settings.AzureGroupsOU
-    $global:TeamsAdmin = $settings.TeamsAdmin
-    $global:TeamsAdminPW = $settings.TeamsAdminPW
+    #$global:TeamsAdmin = $settings.TeamsAdmin
+    #$global:TeamsAdminPW = $settings.TeamsAdminPW
     $global:CompositeAttribute = $settings.AzureGroupsCompositeAttribute
 
     $global:ActiveMQServer = $settings.ActiveMQServer
@@ -38,6 +38,10 @@ function load-settings($s_file)
     $global:MaxNoActivity = $settings.MaxNoActivity
     $global:SmtpServer = $settings.SmtpServer
     $global:MaxNoActivity = $settings.MaxNoActivity
+
+    $global:TenantID = $settings.TenantID
+    $global:AppID = $settings.AppID
+    $global:Thumbprint = $settings.Thumbprint
 }
 
 function Write-Log($logmsg)
@@ -67,6 +71,7 @@ function process-message($xmlmsg)
     }
 
     $teamname = "$($xmlmsg.teamsRequest.name) - SFU Teams"
+    $escapedteamname = $teamname -Replace "'","''"
     $mailnickname = $teamname  -replace "[^A-Za-z0-9_-]",""
     $owners = $xmlmsg.teamsRequest.owners.Split(",")
     $descr = $xmlmsg.teamsRequest.description
@@ -90,7 +95,7 @@ function process-message($xmlmsg)
         {
             # see if the Team got half-created as a Group. MS docs say the default is to remove the backing
             # group if team creation fails, but that doesn't seem to happen consistently.
-            $groupid = Get-AzureADGroup -filter "DisplayName eq '$teamname'"
+            $groupid = Get-AzureADGroup -filter "DisplayName eq '$escapedteamname'"
             if ($groupid)
             {
                 Write-Log "Warning: $teamname exists as a Group but not a Team. Attempting to create a team"
@@ -240,11 +245,16 @@ load-settings($SettingsFile)
 try {
     # Set up AzureAD session
     # get credentials and login as AAD admin
-    $TeamsPassword = $global:TeamsAdminPW | ConvertTo-SecureString -AsPlainText -Force
-    $UserCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $global:TeamsAdmin,$TeamsPassword
+    #$TeamsPassword = $global:TeamsAdminPW | ConvertTo-SecureString -AsPlainText -Force
+    #$UserCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $global:TeamsAdmin,$TeamsPassword
+    #$junk = Connect-MicrosoftTeams -Credential $UserCredential
+    #$junk = Connect-AzureAD -Credential $UserCredential
 
-    $junk = Connect-MicrosoftTeams -Credential $UserCredential
-    $junk = Connect-AzureAD -Credential $UserCredential
+    # Switched to certificate-based auth following this guide: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+
+    $junk = Connect-AzureAD -CertificateThumbprint $global:Thumbprint -ApplicationID $global:AppID -TenantID $global:TenantID
+    $junk = Connect-MicrosoftTeams -CertificateThumbprint $global:Thumbprint -ApplicationID $global:AppID -TenantID $global:TenantID
+
 }
 catch {
         write-log "Error connecting to MS Teams: "
@@ -280,9 +290,9 @@ $retryTimer=10
 $retryFailures=0
 $msg=""
 
-# Not running in daemon mode, don't loop forever. Run once and exit
-#while(1)
-#{
+# Not running in daemon mode, don't loop forever. Run until 8 mins of inactivity
+while($noactivity -lt 480)
+{
     try {
         $isRetry = $false
         $Message = $Consumer.Receive([System.TimeSpan]::FromTicks(10000))
@@ -299,8 +309,8 @@ $msg=""
             # then if a message in the retry queue fails again, the next retry time will be 20 seconds,
             # and so on. That way, if there's a failure in underlying infrastructure, the message should
             # still eventually get processed. 
-            ##if ($loopcounter -gt $retryTimer)
-            #{
+            if ($loopcounter -gt $retryTimer)
+            {
                 $Message = $RetryConsumer.Receive([System.TimeSpan]::FromTicks(10000))
                 # Only if no message was found, reset loop counter so that if there are 
                 # multiple messages to be tried, they'll all be tried at once
@@ -317,7 +327,7 @@ $msg=""
                 }
                 # Also reset the loop counter if last retrymsg failed, so that we back off properly.
                 elseif ($retryFailures) { $loopcounter = 1 }
-            #}
+            }
             if (!$Message)
             {
                 $noactivity++
@@ -398,7 +408,7 @@ $msg=""
         Remove-ActiveMQSession $AMQSession
         exit 0
     }
-#}
-
+}
+Write-Log "8 mins Inactivity. Exiting"
 Remove-ActiveMQSession $AMQSession
 exit 0

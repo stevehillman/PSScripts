@@ -16,9 +16,12 @@ function load-settings($s_file)
     $settings = ConvertFrom-Json ((Get-Content $s_file) -join "")
     $global:RestToken = $settings.RestToken
     $global:GroupsOU = $settings.AzureGroupsOU
-    $global:AzureGroupsAdmin = $settings.AzureGroupsAdmin
-    $global:AzureGroupsAdminPW = $settings.AzureGroupsAdminPW
+    #$global:AzureGroupsAdmin = $settings.AzureGroupsAdmin
+    #$global:AzureGroupsAdminPW = $settings.AzureGroupsAdminPW
     $global:CompositeAttribute = $settings.AzureGroupsCompositeAttribute
+    $global:TenantID = $settings.TenantID
+    $global:AppID = $settings.AppID
+    $global:Thumbprint = $settings.Thumbprint
 }
 
 function Write-Log($logmsg)
@@ -35,13 +38,18 @@ load-settings($SettingsFile)
 
 # Set up AzureAD session
 # get credentials and login as AAD admin
-$Password = $global:AzureGroupsAdminPW | ConvertTo-SecureString -AsPlainText -Force
-$UserCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $global:AzureGroupsAdmin,$Password
+#$Password = $global:AzureGroupsAdminPW | ConvertTo-SecureString -AsPlainText -Force
+#$UserCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $global:AzureGroupsAdmin,$Password
 
-Connect-AzureAD -Credential $UserCredential
+# Switched to certificate-based auth following this guide: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
 
+Connect-AzureAD -CertificateThumbprint $global:Thumbprint -ApplicationID $global:AppID -TenantID $global:TenantID
+
+Write-Log "Starting up"
 # Get all AD Groups in the target OU
 $Groups = GET-ADGroup -Filter '*' -Searchbase $GroupsOU -ResultSetSize $null -Properties $CompositeAttribute -ErrorAction Stop
+
+Write-Log "Processing $($Groups.Count) Groups"
 
 ForEach ($Group in $Groups) 
 {
@@ -57,7 +65,7 @@ ForEach ($Group in $Groups)
         {
             continue
         }
-        Write-Log "Processing Group $($Group.name)"
+        # Write-Log "Processing Group $($Group.name)"
         $Params = $Group.$CompositeAttribute.Split(";")
         $AzureTeamGroup = $null
         $AzureADGroup = $null
@@ -71,10 +79,10 @@ ForEach ($Group in $Groups)
         }
         if ($AzureTeamGroup -eq $null -or $AzureTeamGroup -eq "")
         {
-            Write-Log "Warning: Skipping missing or empty TEAM: $($Group.$CompositeAttribute)"
+            Write-Log "Warning: Group $($Group.name): Skipping missing or empty TEAM: $($Group.$CompositeAttribute)"
             continue
         }
-        Write-Log "  $($Group.name) is linked to Team $AzureTeamGroup"
+        # Write-Log "  $($Group.name) is linked to Team $AzureTeamGroup"
 
         try {
             $AzureGroup = Get-AzureADGroup -ObjectID $AzureTeamGroup -ErrorAction Stop
@@ -101,7 +109,8 @@ ForEach ($Group in $Groups)
 
         $AzureMembers = Get-AzureADGroupMember -ObjectID $AzureGroup.ObjectID -All $true -ErrorAction Stop
 
-        $ADGroup = Get-AzureADGroup -SearchString $Group.Name  -ErrorAction Stop
+        $EscapedGroupName = $Group.Name -Replace "'","''"
+        $ADGroup = Get-AzureADGroup -filter "DisplayName eq '$EscapedGroupName'"  -ErrorAction Stop
         if ($ADGroup -eq $null -or $ADGroup -eq "")
         {
             Write-Log "Something went wrong loading AzureAD Group $($Group.name). Skipping"

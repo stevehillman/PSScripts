@@ -179,6 +179,7 @@ function compare-arrays($arrayobj1, $arrayobj2)
 #   - compare the membership with what is currently in AD
 #   - apply changes in chunks
 
+## TODO: We need to modify the Grouper PSModule to return relevant SFU attributes for groups
  
 
 function process-grouper-message($esbEvent)

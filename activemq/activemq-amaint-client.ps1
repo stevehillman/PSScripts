@@ -83,11 +83,13 @@ function process-amaint-message($xmlmsg)
     if ($xmlmsg.syncLogin.login.status -ne "active")
     {
         # Special case - ignore 'pending create' or 'defined' status (any others to ignore?)
-        if ($xmlmsg.synclogin.login.status -eq "pending create" -or $xmlmsg.synclogin.login.status -eq "defined")
-        {
-            Write-Log "Skipping Pending Create or Defined status msg"
-            return 1
-        }
+        # We don't do this anymore - Alan's scripts left behind active users in AD who are "defined" in
+        # Amaint. We need a way to ensure *all* users get set properly in AD, so skip no one!
+        #if ($xmlmsg.synclogin.login.status -eq "pending create" -or $xmlmsg.synclogin.login.status -eq "defined")
+        #{
+        #    Write-Log "Skipping Pending Create or Defined status msg"
+        #    return 1
+        #}
         $userenabled = $false
     }
 
