@@ -83,23 +83,24 @@ function Split-array
 
 $GoodUserLookup = @{}
 
-function Check-ADUsers($UserArray)
+function Check-ADUsers($UserArray, $ServerToUse)
 {
     $GoodUsers = @{}
     ForEach ($adu in $UserArray)
     {
-        if ($GoodUserLookup[$adu] -eq 1)
+        if ($GoodUserLookup["$adu@$ServerToUse"] -eq 1)
         {
+            $GoodUsers[$adu] = 1
             Continue
         }
         try {
-            $junk = Get-ADUser $adu -Server $pdc -ErrorAction Stop 
+            $junk = Get-ADUser $adu -Server $ServerToUse -ErrorAction Stop 
         }
         catch {
             continue
         }
         $GoodUsers[$adu] = 1
-        $GoodUserLookup[$adu] = 1
+        $GoodUserLookup["$adu@$ServerToUse"] = 1
     }
     return $GoodUsers.PSBase.Keys
 }
@@ -137,8 +138,6 @@ function process-message($jsonmsg)
 #
 # See here for more info on using LINQ with Powershell: https://www.red-gate.com/simple-talk/dotnet/net-framework/high-performance-powershell-linq/
 
-# This function has not yet been tested
-
 function compare-arrays($arrayobj1, $arrayobj2)
 {
     # First, Cast as Strings, just in case they aren't
@@ -155,100 +154,157 @@ function compare-arrays($arrayobj1, $arrayobj2)
 
 # Process a Grouper ActiveMQ message.
 # At SFU, we've got custom ActiveMQ code that runs on the AMQ server and "squashes" Grouper event messages
-# (which consist of individual add/drop member events) down into a single "AD Update" message. These messages
+# (which consist of individual add/drop member events) down into a single message. These messages
 # are also rate-limited to 1 per minute, to ensure AD doesn't get overloaded. So if 100 users are added to a list,
-# only a single AD Update message will be sent.
+# only a single AD Update message will be sent. If _only_ the attribute of a group changes, no GROUP_UPDATE message is
+# generated. Instead, an "ATTRIBUTE_ASSIGN_VALUE_ADD" ChangeLog entry is sent. Unfortunately, these don't contain the group
+# they relate to, so instead we have to watch for the attributes we care about and then fetch the group the attribute_assign is
+# for
 #
-# However, the AMQ code then does 3 things:
-# - calls the AmaintRest API to determine all AD groups that have this group as a member
-# - ForEach group, fetch all members (also done via AmaintRest), and write the members to a file named for the group name
-# - FTP each file to a Windows server (tecnically this step is done using a Camel route, rather than our custom code)
+# When a user is added to a group, Grouper sends a ChangeLog entry for every parent group as well, so it's not necessary to determine 
+# parent groups ourselves - we will get an AMQ message for every parent group automatically. 
 #
-# The old Windows DOS scripts would then process each of those files, except that it wasn't, as Alan found it didn't work for him. He
-# was relying on GDD instead
-#
-# As such, this code has nothing to process yet, as we don't want to continue the process of using FTP to move data
-#
-# In order to simplify the AMQ code, we will strip it down - just send the group names, once per minute, in AMQ messages. 
 # The below code then needs to:
 # - decode the message (Grouper messages are JSON, not XML, so it's a bit different)
-# - Fetch parent groups via GrouperRest
-# - Iterate through each resulting group and
-#   - if it doesn't have the ADGroup flag set, skip
+#   - if it doesn't have the S/ADGroup flag set AND isn't in the resource:app:AD/SAD stems, skip
 #   - fetch the flattened membership of the group from Grouper
 #   - compare the membership with what is currently in AD
 #   - apply changes in chunks
-
-## TODO: We need to modify the Grouper PSModule to return relevant SFU attributes for groups
- 
+#   - set the GID number if necessary
 
 function process-grouper-message($esbEvent)
 {
     $GroupName = $esbEvent.groupName
-    # Fetch this group's details
-    $ThisGroup = Get-GrouperGroup -Group $GroupName -Username $global:GrouperUser -Password $global:GrouperPassword
-    
-    # Add it to the (empty) list of groups to process
-    $PotentialGroups = @($ThisGroup)
 
-    # Fetch the parent groups. If there are any, add them
-    $resp = Get-GrouperMemberships -Group $GroupName -Username $global:GrouperUser -Password $global:GrouperPassword
-    if ($resp.Count)
+    # Check to see whether this is an ATTRIBUTE_ASSIGN event that we care about. If it is, they don't include the
+    # group info, so we must fetch it and trigger a group update event instead
+    if ($esbEvent.eventType -eq "ATTRIBUTE_ASSIGN_VALUE_ADD" -And $esbEvent.attributeDefNameName -match "^etc:attribute:sfu:(gidNumber|sfuIsADGroup|sfuIsSADGroup)$" )
     {
-        $PotentialGroups = $PotentialGroups + $resp
-    }
-
-    $UpdateGroups = @()
-
-    # Look at the resulting list of groups and see which ones we care about
-    # Grouper group attributes are a bit weird. They're contained in two separate arrays - the attribute names in
-    # one, and the attribute values in another, with the same corresponding index value. So see if the attribute
-    # name exists, and if it does, use its index to fetch the corresponding value
-    ForEach ($PGroup in $PotentialGroups)
-    {
-        if ($PGroup.detail.attributeNames -contains "sfuIsADGroup" -and 
-            $PGroup.detail.attributeValues[[array]::indexof($PGroup.detail.attributeNames,"sfuIsADGroup")] -eq 1)
-        {
-            $UpdateGroups = $UpdateGroups + @($PGroup.name)
-        }    
-        else
-        {
-            # Group is not an AD group. We should test to see whether it exists in AD. If it does, it needs to be deleted
-            # TODO: Process group deletes
+        try {
+            $wsAttributeAssignments = Get-GrouperAttributeAssignments -AssignId $esbEvent.attributeAssignId -Username $global:GrouperUser -Password $global:GrouperPassword
         }
+        catch {
+            # Unrecognized error. We can't continue
+            $global:LastError = "Error fetching Attribute Assignment from Grouper. Failing: $_"
+            Write-Log $LastError
+            return 0
+        }
+        $GroupName = $wsAttributeAssignments[0].ownerGroupName
     }
 
-    # Quick return if there's nothing to do
-    if ($UpdateGroups.count -eq 0)
+    if ($esbEvent.eventType -eq "GROUP_DELETE")
     {
-        Write-Log "$($ThisGroup.name) is not an AD group and does not belong to any AD groups. Skipping"
+        # Group was deleted. Can't fetch details from Grouper. For now, just ignore this message type
+        # We will run a separate nightly process to delete all groups that don't exist in Grouper/Maillist anymore)
+        Write-Log "$GroupName deleted from Grouper. Ignoring message"
         return 1
     }
 
-    # We have our list of groups to sync. For each group, fetch the flattened memberships from Grouper
-    # and the current members from AD and compare. If the group doesn't exist in AD yet, create it.
-    ForEach ($Pgroup in $UpdateGroups) {
-        # Group names will be in grouper naming format (stem:groupname).
-        # In the (near?) future, we will likely need to support multiple stems and
-        # update different OUs based on that. E.g.
-        # - AzureGroups
-        # - Teams
-        # - Exchange DLs
-        #
-        # For now, we'll only process groups in the Maillist stem, so skip any others
-        if ($PGroup -notmatch "^maillist:")
+    # Fetch this group's details. We do this to fetch the attributes, so we can determine whether it's an AD group or not
+    try {
+        $GrouperGroup = Get-GrouperGroup -Group $GroupName -Username $global:GrouperUser -Password $global:GrouperPassword -Attributes:$true
+    } catch {
+        if ($_ -match "Group '$GroupName' Not Found")
         {
-            Write-Log "Skipping non-maillist group $PGroup"
+            Write-Log "$GroupName deleted from Grouper. Ignoring message"
+            return 1
+        } 
+        else
+        {
+            $global:LastError = "Error fetching $GroupName from Grouper. Failing: $_"
+            Write-Log $global:LastError
+            return 0
+        }
+    }
+
+    
+    $Servers = @()
+
+    # Check to see whether it either has the S/ADGroup attribute set, or is in the Grouper Stem we care about
+    if (($GrouperGroup.detail.sfuIsADGroup -eq "true") -Or $GrouperGroup.name -match "resource:app:ADSFU:" )
+    {
+        $Servers = $Servers + @($pdc)
+    }
+    if (($GrouperGroup.detail.sfuIsSADGroup -eq "true") -Or $GrouperGroup.name -match "resource:app:SAD:") 
+    {
+        $Servers = $Servers + @("sad.sfu.ca")
+    }  
+
+    if ($Servers.count -eq 0)
+    {
+        Write-Log "$($GrouperGroup.name) is not an S/AD group. Skipping"
+        return 1
+    }
+
+    # We have our list of AD Servers to sync. Fetch the flattened memberships from Grouper
+    # and the current members from S/AD and compare. If the group doesn't exist in S/AD yet, create it.
+    ForEach ($ADServer in $Servers) {
+        # Group names will be in grouper naming format (stem:groupname).
+        
+        # FOR NOW, SKIP GROUPS NOT IN THE MAILLIST STEM. Remove this when we're ready to start provisioning "resource:app:AD" groups
+        if ($GrouperGroup.name -notmatch "^maillist:")
+        {
+            Write-Log "Skipping non-maillist group $($GrouperGroup.name)"
             continue
         }
 
-        $ADGroupName =  "CN=" + $PGroup.Substring($PGroup.lastindexof(':')+1) + "," + $global:GroupsOU
+
+        # Calculate the AD group name. If it's a maillist, just append the default GroupsOU.
+        # Otherwise, if it's in the new resource:app stem, reverse the stem path into OUs.
+        # E.g: resource:app:ADSFU:its:AzureGroups becomes CN=<group>,OU=AzureGroups,OU=its,DC=AD,DC=SFU,DC=CA
+        # Also calculate the group extension (just the name part), and the path (the OU) separately - we'll need those if this is a new group
+        $PGroup = $GrouperGroup.name
+
+        if ($PGroup -match "^maillist:")
+        {
+            $ADGroupName =  "CN=" + $PGroup.Substring($PGroup.lastindexof(':')+1) + "," + $global:GroupsOU
+            $ADGroupExtension = $PGroup.Substring($PGroup.lastindexof(':')+1)
+            $ADGroupOU = $global:GroupsOU
+            if ($ADServer -eq "sad.sfu.ca")
+            {
+                $ADGroupName = $ADGroupName -Replace ",DC=AD,",",DC=SAD,"
+                $ADGroupOU = $ADGroupOU -Replace ",DC=AD,",",DC=SAD,"
+            }
+        }
+        else
+        {
+            $MyGroup = $PGroup -replace "^resource:app:ADSFU:","" -replace "^resource:app:SAD:",""
+            $MyOUs = $MyGroup.Split(":")
+            [array]::Reverse($MyOUs)
+            $ADGroupName = "CN="
+            $ADGroupExtension = ""
+            $ADGroupOU = "OU="
+            ForEach ($Ou in $MyOUs) {
+                $ADGroupName = $ADGroupName + $Ou + ",OU="
+                if ($ADGroupExtension -eq "")
+                {
+                    $ADGroupExtension = $Ou
+                }
+                else
+                {
+                    $ADGroupOU = $ADGroupOU + $Ou + ",OU="
+                }
+            }
+            $ADGroupName = $ADGroupName -replace ",OU=$",",DC="
+            $ADGroupOU = $ADGroupOU -replace ",OU=$",",DC="
+            if ($ADServer -eq "sad.sfu.ca")
+            {
+                $ADGroupName = $ADGroupName + "SAD,DC=SFU,DC=CA"
+                $ADGroupOU = $ADGroupOU + "SAD,DC=SFU,DC=CA"
+            } 
+            else
+            {
+                $ADGroupName = $ADGroupName + "AD,DC=SFU,DC=CA"
+                $ADGroupOU = $ADGroupOU + "AD,DC=SFU,DC=CA"
+            }
+
+        }
         Write-Log "  Processing $ADGroupName"
 
         # If it's an add or update, test to see whether group exists. Fetch the members while we're at it
         $groupexists = $true
         try {
-            $ADGroup = Get-ADGroup $ADGroupName -Properties members -Server $pdc -ErrorAction Stop
+            $ADGroup = Get-ADGroup $ADGroupName -Properties members -Server $ADServer -ErrorAction Stop
         }
         catch {
             if ($_.CategoryInfo.Category -eq "ObjectNotFound")
@@ -271,16 +327,16 @@ function process-grouper-message($esbEvent)
             try {
                 if ($global:PassiveMode)
                 {
-                    Write-Log "PassiveMode: New-ADGroup $ADGroupName -Path $global:GroupsOU -Server $pdc"
+                    Write-Log "PassiveMode: New-ADGroup $ADGroupName -Path $global:GroupsOU -Server $ADServer"
                     $ADGroup = @{
                         members = @()
                     }
                 }
                 else
                 {
-                    New-ADGroup $ADGroupName -Path $global:GroupsOU -GroupCategory Security -GroupScope Global -Server $pdc -ErrorAction Stop
+                    New-ADGroup $ADGroupExtension -Path $ADGroupOU -GroupCategory Security -GroupScope Global -Server $ADServer -ErrorAction Stop
                     Write-Log "Group $ADGroupName created"
-                    $ADGroup = Get-ADGroup $ADGroupName -Properties members -Server $pdc -ErrorAction Stop
+                    $ADGroup = Get-ADGroup $ADGroupName -Properties members -Server $ADServer -ErrorAction Stop
                 }
             }
             catch {
@@ -301,10 +357,17 @@ function process-grouper-message($esbEvent)
         $GrouperMembers = @{}
         ForEach ($gm in $GrouperGroup.Members)
         {
-            $GrouperMembers["CN=$gm,$global:UsersOU"] = 1
+            if ($ADServer -eq "sad.sfu.ca")
+            {
+                $GrouperMembers["CN=$gm,OU=SFUUsers,DC=sad,DC=sfu,DC=ca"] = 1   
+            }
+            else
+            { 
+                $GrouperMembers["CN=$gm,$global:UsersOU"] = 1
+            }
         }
-        Write-Log "      Converted to ADUsers array" # This can be removed later - it's only here for performance calculation purposes
 
+        # Calculate the array of Adds and Drops based on the diff between ADGroup memberships and Grouper memberships
         # compare-arrays doesn't work if either array is empty, so only use it if both sides have some members
         if ($ADGroup.Members.Count -gt 0 -and $GrouperGroup.Members.Count -gt 0)
         {
@@ -319,7 +382,7 @@ function process-grouper-message($esbEvent)
             if ($ADGroup.Members.Count -eq 0)
             {
                 # New or empty AD group needs populating
-                $toAdd = $GrouperMembers.PSBase.Keys
+                [string[]]$toAdd = $GrouperMembers.PSBase.Keys
                 $toDrop = @()
             }
             else
@@ -348,6 +411,7 @@ function process-grouper-message($esbEvent)
             {
                 $Chunks = Split-Array -inArray $ToAdd -parts $n
             }
+            
             Write-Log "Adding $($toAdd.Count) members in $n chunks of max 1000"
             if ($toAdd.Count -gt 10)
             {
@@ -362,33 +426,36 @@ function process-grouper-message($esbEvent)
             {
                 $retryadd = 0
                 try { 
-                    Add-ADGroupMember -Identity $ADGroupName -Members $Chunk -Server $pdc -ErrorAction Stop -WhatIf:$global:PassiveMode
+                    Add-ADGroupMember -Identity $ADGroupName -Members $Chunk -Server $ADServer -ErrorAction Stop -WhatIf:$global:PassiveMode
                 }
                 catch { 
                     if ($_.CategoryInfo.Category -eq "ObjectNotFound" -and $_.CategoryInfo.TargetType -eq "ADPrincipal")
                     {
-                        # One or more members doesn't exist in AD
+                        # One or more members doesn't exist in AD. This _shouldnt_ happen with Grouper, since it also doesn't
+                        # allow non-existent members, but it's possible in the future that Grouper will have users that AD does not
                         $retryadd = 1
                         Write-Log "Error: Chunk has non-existent users"
                     }
                     else
                     {
-                        Write-Log "Error adding users to $ADGroupName : $_"
+                        $global:LastError = "Error adding users to $ADGroupName : $_"
+                        Write-Log $global:LastError
                         return 0
                     }
                 }
                 if ($retryadd)
                 {
                     # Remove the non-existent users from this chunk and try again
-                    $checkedChunk = Check-ADUsers $Chunk
+                    $checkedChunk = Check-ADUsers $Chunk $ADServer
                     if ($checkedChunk.count -gt 0)
                     {
                         Write-Log "  Trying again with $($checkedChunk.count) users in Chunk"
                         try { 
-                            Add-ADGroupMember -Identity $ADGroupName -Members $checkedChunk -Server $pdc -ErrorAction Stop -WhatIf:$global:PassiveMode
+                            Add-ADGroupMember -Identity $ADGroupName -Members $checkedChunk -Server $ADServer -ErrorAction Stop -WhatIf:$global:PassiveMode
                         }
                         catch { 
-                            Write-Log "Error adding users to $ADGroupName : $_"
+                            $global:LastError = "Error adding users to $ADGroupName : $_"
+                            Write-Log $global:LastError
                             return 0
                         }
                     }
@@ -428,15 +495,30 @@ function process-grouper-message($esbEvent)
                 {
                     $retryrm = 0
                     try { 
-                        Remove-ADGroupMember -Identity $ADGroupName -Members $Chunk -Server $pdc -ErrorAction Stop -Confirm:$false
+                        Remove-ADGroupMember -Identity $ADGroupName -Members $Chunk -Server $ADServer -ErrorAction Stop -Confirm:$false
                     }
                     catch { 
-                        Write-Log "Error removing users from $ADGroupName : $_"
+                        $global:LastError = "Error removing users from $ADGroupName : $_"
+                        Write-Log $global:LastError
                         return 0
                     }
                 }
             }
         }
+
+        # Handle updating the GID if necessary
+        if ($GrouperGroup.detail.gidNumber -ne $null -And $ADServer -ne "sad.sfu.ca")
+        {
+            if ([int]$GrouperGroup.detail.gidNumber -gt 0 -And ($ADGroup.gidNumber -eq -1 -Or $ADGroup.gidNumber -eq $null))
+            {
+                # GID Number needs updating
+                $groupprops += @{
+                    msSFU30NisDomain="ad"
+                    gidNumber=[int]$GrouperGroup.detail.gidNumber
+                }
+                $ADGroup | Set-ADGroup @groupprops -WhatIf:$global:PassiveMode
+            }
+        }  
     }
     # If we got here, we succeeded
     Write-Log "Group $GroupName successfully processed"
@@ -445,8 +527,8 @@ function process-grouper-message($esbEvent)
 
 
 # Queue a message in the retry queue to retry it later.
-# We reformat the XML - wrap it in a "retryMessage" tag and
-# add a retry count tag.
+# We add a "retryCount" json property if not already there
+# If maxretries reached, fail the message and alert an admin
 function retry-message($m)
 {
     $mtmp = $m.Text | ConvertFrom-Json
