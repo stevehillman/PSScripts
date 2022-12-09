@@ -348,6 +348,7 @@ function process-grouper-message($esbEvent)
         }
         Write-Log "    Fetched $($ADGroup.members.count) members from AD"
 
+        $GroupWithDetails = $GrouperGroup
         # Fetch Grouper memberships
         $GrouperGroup = Get-GrouperGroup -Group $PGroup -Members -OnlyUsers -Username $global:GrouperUser -Password $global:GrouperPassword
         Write-Log "    Fetched $($GrouperGroup.members.count) members from Grouper"
@@ -507,14 +508,16 @@ function process-grouper-message($esbEvent)
         }
 
         # Handle updating the GID if necessary
-        if ($GrouperGroup.detail.gidNumber -ne $null -And $ADServer -ne "sad.sfu.ca")
+        if ($GroupWithDetails.detail.gidNumber -ne $null -And $ADServer -ne "sad.sfu.ca")
         {
-            if ([int]$GrouperGroup.detail.gidNumber -gt 0 -And ($ADGroup.gidNumber -eq -1 -Or $ADGroup.gidNumber -eq $null))
+            if ([int]$GroupWithDetails.detail.gidNumber -gt 0 -And ($ADGroup.gidNumber -eq -1 -Or $ADGroup.gidNumber -eq $null))
             {
                 # GID Number needs updating
-                $groupprops += @{
-                    msSFU30NisDomain="ad"
-                    gidNumber=[int]$GrouperGroup.detail.gidNumber
+                $groupprops = @{
+                    Replace = @{
+                        msSFU30NisDomain="ad"
+                        gidNumber=[int]$GroupWithDetails.detail.gidNumber
+                    }
                 }
                 $ADGroup | Set-ADGroup @groupprops -WhatIf:$global:PassiveMode
             }
